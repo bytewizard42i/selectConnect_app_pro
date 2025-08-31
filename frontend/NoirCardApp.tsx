@@ -1,7 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode.react';
-import { ethers } from 'ethers';
 import { Camera } from 'lucide-react';
+
+// Midnight SDK types (placeholders until SDK is available)
+interface MidnightProvider {
+  getContract(address: string): Promise<MidnightContract>;
+  getSigner(): Promise<MidnightSigner>;
+}
+
+interface MidnightSigner {
+  getAddress(): Promise<string>;
+  signMessage(message: string): Promise<string>;
+}
+
+interface MidnightContract {
+  call(method: string, args: any[]): Promise<any>;
+}
+
+// Declare global Midnight wallet
+declare global {
+  interface Window {
+    midnight?: {
+      provider: MidnightProvider;
+    };
+  }
+}
 
 interface NoirCardData {
   cardId: string;
@@ -42,8 +65,10 @@ export const NoirCardApp: React.FC = () => {
   const [generatedLink, setGeneratedLink] = useState<string>('');
   const [scannedData, setScannedData] = useState<any>(null);
   const [showScanner, setShowScanner] = useState(false);
-  const [provider, setProvider] = useState<ethers.Provider | null>(null);
-  const [signer, setSigner] = useState<ethers.Signer | null>(null);
+  const [provider, setProvider] = useState<MidnightProvider | null>(null);
+  const [signer, setSigner] = useState<MidnightSigner | null>(null);
+  const [noirCardContract, setNoirCardContract] = useState<MidnightContract | null>(null);
+  const [abuseEscrowContract, setAbuseEscrowContract] = useState<MidnightContract | null>(null);
 
   // Initialize wallet connection
   useEffect(() => {
@@ -51,18 +76,31 @@ export const NoirCardApp: React.FC = () => {
   }, []);
 
   const initializeWallet = async () => {
-    if (typeof window !== 'undefined' && window.ethereum) {
-      const provider = new ethers.BrowserProvider(window.ethereum);
+    if (typeof window !== 'undefined' && window.midnight) {
+      const provider = window.midnight.provider;
       const signer = await provider.getSigner();
       setProvider(provider);
       setSigner(signer);
+      
+      // Initialize contracts with environment variables or defaults
+      const noirCardAddress = typeof window !== 'undefined' 
+        ? (window as any).NEXT_PUBLIC_NOIRCARD_ADDRESS || '0x...' 
+        : '0x...';
+      const abuseEscrowAddress = typeof window !== 'undefined' 
+        ? (window as any).NEXT_PUBLIC_ABUSE_ESCROW_ADDRESS || '0x...' 
+        : '0x...';
+      
+      const noirCard = await provider.getContract(noirCardAddress);
+      const abuseEscrow = await provider.getContract(abuseEscrowAddress);
+      setNoirCardContract(noirCard);
+      setAbuseEscrowContract(abuseEscrow);
       
       // Load user's cards
       await loadUserCards(signer);
     }
   };
 
-  const loadUserCards = async (signer: ethers.Signer) => {
+  const loadUserCards = async (signer: MidnightSigner) => {
     // Implementation would load cards from contract
     // Mock data for now
     const mockCards: NoirCardData[] = [
@@ -98,17 +136,23 @@ export const NoirCardApp: React.FC = () => {
     if (!signer) return;
 
     try {
-      // Hash contact data
-      const contactDataHash = ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(cardData.contactData)));
+      // Hash contact data using crypto module (server-side) or Web Crypto API
+      const encoder = new TextEncoder();
+      const data = encoder.encode(JSON.stringify(cardData.contactData));
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const contactDataHash = Array.from(new Uint8Array(hashBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
       
-      // Call contract to create card
-      // const tx = await noirCardContract.createCard(
-      //   cardData.alias,
-      //   contactDataHash,
-      //   cardData.policy,
-      //   cardData.revealLevels
-      // );
-      // await tx.wait();
+      // Call Midnight contract to create card
+      if (noirCardContract) {
+        await noirCardContract.call('createCard', [
+          cardData.alias,
+          contactDataHash,
+          cardData.policy,
+          cardData.revealLevels
+        ]);
+      }
 
       // Reload cards
       await loadUserCards(signer);
@@ -121,13 +165,23 @@ export const NoirCardApp: React.FC = () => {
     if (!signer) return;
 
     try {
-      // Generate accessor commitment (for privacy)
-      const accessorCommit = ethers.keccak256(ethers.toUtf8Bytes(`accessor_${Date.now()}`));
+      // Generate accessor commitment using Web Crypto API
+      const encoder = new TextEncoder();
+      const commitData = encoder.encode(`accessor_${Date.now()}`);
+      const commitBuffer = await crypto.subtle.digest('SHA-256', commitData);
+      const accessorCommit = Array.from(new Uint8Array(commitBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
       
-      // Call contract to generate link
-      // const tx = await noirCardContract.generateAccessLink(cardId, customTTL || 0, accessorCommit);
-      // const receipt = await tx.wait();
-      // const linkId = receipt.events[0].args.linkId;
+      // Call Midnight contract to generate link
+      if (noirCardContract) {
+        const result = await noirCardContract.call('generateAccessLink', [
+          cardId, 
+          customTTL || 0, 
+          accessorCommit
+        ]);
+        // Handle result to get linkId
+      }
 
       // Mock link generation
       const linkId = `link_${Date.now()}`;
@@ -172,13 +226,22 @@ export const NoirCardApp: React.FC = () => {
     if (!signer) return;
 
     try {
+      // Generate sender commitment for privacy
+      const encoder = new TextEncoder();
+      const senderData = encoder.encode(`sender_${await signer.getAddress()}_${Date.now()}`);
+      const commitBuffer = await crypto.subtle.digest('SHA-256', senderData);
+      const senderCommit = Array.from(new Uint8Array(commitBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+      
       // Post bond to AbuseEscrow contract
-      // const tx = await abuseEscrowContract.postBond(
-      //   cardId,
-      //   senderCommit,
-      //   { value: bondAmount }
-      // );
-      // await tx.wait();
+      if (abuseEscrowContract) {
+        await abuseEscrowContract.call('postBond', [
+          linkId, // Use linkId to derive cardId
+          senderCommit,
+          bondAmount
+        ]);
+      }
 
       // After bond is posted, access the card
       await accessCardData(linkId, 1);
@@ -191,10 +254,30 @@ export const NoirCardApp: React.FC = () => {
     if (!signer) return;
 
     try {
-      const accessorCommit = ethers.keccak256(ethers.toUtf8Bytes(`accessor_${await signer.getAddress()}`));
+      // Generate accessor commitment
+      const encoder = new TextEncoder();
+      const accessorData = encoder.encode(`accessor_${await signer.getAddress()}`);
+      const commitBuffer = await crypto.subtle.digest('SHA-256', accessorData);
+      const accessorCommit = Array.from(new Uint8Array(commitBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
       
-      // Call contract to access card
-      // const revealedData = await noirCardContract.accessCard(linkId, level, accessorCommit);
+      // Call Midnight contract to access card
+      if (noirCardContract) {
+        const revealedData = await noirCardContract.call('accessCard', [
+          linkId, 
+          level, 
+          accessorCommit
+        ]);
+        
+        // Process revealed data
+        setScannedData({
+          level: level,
+          dataType: revealedData.dataType,
+          data: revealedData.decryptedData
+        });
+        return;
+      }
       
       // Mock revealed data
       const mockData = {
@@ -256,7 +339,7 @@ export const NoirCardApp: React.FC = () => {
                         </p>
                         {card.policy.requiresBond && (
                           <span className="inline-block bg-yellow-600 text-xs px-2 py-1 rounded mt-2">
-                            Bond Required: {ethers.formatEther(card.policy.bondAmount)} ADA
+                            Bond Required: {(parseInt(card.policy.bondAmount) / 1000000).toFixed(2)} ADA
                           </span>
                         )}
                       </div>

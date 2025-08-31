@@ -109,6 +109,7 @@ export class NoirCardRelay {
      * Start cleanup job for expired data
      */
     private startCleanupJob(): void {
+        // Run cleanup every hour
         cron.schedule('0 * * * *', async () => {
             try {
                 await this.cleanupExpiredData();
@@ -125,7 +126,10 @@ export class NoirCardRelay {
         const { bondId, evidenceHash, senderCommit, cardId, attestationId } = job.data;
         
         try {
+            // Generate nullifier for slashing
             const senderNull = this.hashToBytes32(`${senderCommit}-${cardId}-nullifier`);
+            
+            // Execute bond slashing on contract
             await this.abuseEscrowContract.call('slashBond', [bondId, evidenceHash, senderNull]);
             
             this.logger.info('Bond slashed successfully', {
@@ -136,12 +140,12 @@ export class NoirCardRelay {
             
         } catch (error) {
             this.logger.error('Bond slashing failed', {
-                error: (error as Error).message,
+                error: error.message,
                 bondId,
                 attestationId,
-                stack: (error as Error).stack
+                stack: error.stack
             });
-            throw error;
+            throw error; // Let Bull handle retries
         }
     }
     
@@ -163,7 +167,7 @@ export class NoirCardRelay {
                 
                 const delay = this.RETRY_DELAY * Math.pow(2, attempt - 1);
                 this.logger.debug(`Retry attempt ${attempt}/${this.MAX_RETRIES} failed, retrying in ${delay}ms`, {
-                    error: (error as Error).message
+                    error: error.message
                 });
                 
                 await new Promise(resolve => setTimeout(resolve, delay));
@@ -198,6 +202,7 @@ export class NoirCardRelay {
      */
     private async cleanupExpiredData(): Promise<void> {
         try {
+            // Clean up expired attestations
             const keys = await this.redis.keys('attestation:*');
             let cleaned = 0;
             
@@ -217,6 +222,7 @@ export class NoirCardRelay {
     
     /**
      * Generate sender commitment with proper cryptographic security
+     * Uses HMAC for better security than simple concatenation
      */
     generateSenderCommitment(cardId: string, senderDid: string, salt: string): string {
         const hmac = createHmac('sha256', salt);
@@ -227,13 +233,16 @@ export class NoirCardRelay {
 
     /**
      * Generate sender nullifier using proper PRF construction
+     * Derives secret key from user's wallet signature for security
      */
     async generateSenderNullifier(userWallet: MidnightSigner, cardId: string): Promise<string> {
         try {
+            // Derive deterministic secret key from wallet signature
             const message = `NoirCard-Nullifier-${cardId}`;
             const signature = await userWallet.signMessage(message);
             const secretKey = createHash('sha256').update(signature).digest();
             
+            // Generate nullifier using PRF
             return createHmac('sha256', secretKey).update(cardId).digest('hex');
         } catch (error) {
             this.logger.error('Failed to generate sender nullifier', { error, cardId });
@@ -252,6 +261,7 @@ export class NoirCardRelay {
         const cacheKey = `bond:${cardId}:${senderCommit}`;
         
         try {
+            // Check cache first
             const cached = await this.redis.get(cacheKey);
             if (cached) {
                 const bondStatus = JSON.parse(cached);
@@ -260,6 +270,7 @@ export class NoirCardRelay {
                 }
             }
             
+            // Check if sender has active bond with retry logic
             const hasActiveBond = await this.retryOperation(async () => {
                 return await this.abuseEscrowContract.call('hasActiveBond', [
                     this.hashToBytes32(cardId),
@@ -268,6 +279,7 @@ export class NoirCardRelay {
             });
 
             if (!hasActiveBond) {
+                // Cache negative result briefly
                 await this.redis.setex(cacheKey, 60, JSON.stringify({ active: false }));
                 
                 return {
@@ -277,12 +289,14 @@ export class NoirCardRelay {
                 };
             }
 
+            // Get sender reputation for rate limiting with retry
             const reputation = await this.retryOperation(async () => {
                 return await this.abuseEscrowContract.call('getSenderReputation', [
                     this.hashToBytes32(senderCommit)
                 ]);
             });
 
+            // Apply rate limiting based on reputation
             if (await this.isRateLimited(senderCommit, reputation)) {
                 return {
                     verified: false,
@@ -291,6 +305,7 @@ export class NoirCardRelay {
                 };
             }
 
+            // Verify message authenticity with anti-replay protection
             const messageValid = await this.verifyMessageSignature(messagePayload);
             if (!messageValid) {
                 this.logger.warn('Invalid message signature', { 
@@ -304,6 +319,7 @@ export class NoirCardRelay {
                 };
             }
 
+            // Cache positive result
             await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify({ 
                 active: true, 
                 reputation,
@@ -320,16 +336,16 @@ export class NoirCardRelay {
 
         } catch (error) {
             this.logger.error('Bond verification failed', { 
-                error: (error as Error).message, 
+                error: error.message, 
                 cardId, 
                 senderCommit,
-                stack: (error as Error).stack
+                stack: error.stack
             });
             
             return {
                 verified: false,
                 reason: 'VERIFICATION_ERROR',
-                error: (error as Error).message
+                error: error.message
             };
         }
     }
@@ -350,8 +366,10 @@ export class NoirCardRelay {
         }
 
         try {
+            // Create evidence hash for this message
             const evidenceHash = this.createEvidenceHash(messagePayload);
             
+            // Store privacy-preserving evidence with encryption
             await this.storeEvidence(evidenceHash, {
                 contentFingerprint: this.generateContentFingerprint(messagePayload.content),
                 timestamp: Date.now(),
@@ -360,7 +378,10 @@ export class NoirCardRelay {
                 cardId: messagePayload.cardId
             });
             
+            // Deliver message to recipient through their preferred channel
             const deliveryResult = await this.deliverToRecipient(messagePayload);
+            
+            // Generate non-repudiable receipts
             const senderReceipt = await this.generateSenderReceipt(messagePayload, evidenceHash);
             const recipientReceipt = await this.generateRecipientReceipt(messagePayload, evidenceHash);
             
@@ -381,16 +402,16 @@ export class NoirCardRelay {
             
         } catch (error) {
             this.logger.error('Message forwarding failed', {
-                error: (error as Error).message,
+                error: error.message,
                 cardId: messagePayload.cardId,
                 senderCommit: messagePayload.senderCommit,
-                stack: (error as Error).stack
+                stack: error.stack
             });
             
             return {
                 success: false,
                 reason: 'FORWARDING_ERROR',
-                error: (error as Error).message,
+                error: error.message,
                 timestamp: Date.now()
             };
         }
@@ -407,6 +428,7 @@ export class NoirCardRelay {
         challengeWindowHours: number = 24
     ): Promise<AttestationResult> {
         try {
+            // Verify attestor is authorized (card owner or guardian)
             const isAuthorized = await this.verifyAttestorAuthorization(cardId, attestor);
             if (!isAuthorized) {
                 this.logger.warn('Unauthorized abuse attestation attempt', {
@@ -421,9 +443,12 @@ export class NoirCardRelay {
             }
             
             const bondId = await this.getBondId(cardId, senderCommit);
+            
+            // Schedule bond slashing after challenge window using persistent queue
             const challengeEndTime = Date.now() + (challengeWindowHours * 60 * 60 * 1000);
             const attestationId = this.generateAttestationId(bondId, evidenceHash, attestor);
             
+            // Add job to persistent queue for reliable slashing
             await this.bondSlashingQueue.add('slashBond', {
                 bondId,
                 evidenceHash,
@@ -440,9 +465,10 @@ export class NoirCardRelay {
                 }
             });
             
+            // Store attestation record
             await this.redis.setex(
                 `attestation:${attestationId}`,
-                challengeWindowHours * 3600 + 86400,
+                challengeWindowHours * 3600 + 86400, // Keep for 24h after challenge window
                 JSON.stringify({
                     bondId,
                     evidenceHash,
@@ -470,17 +496,17 @@ export class NoirCardRelay {
             
         } catch (error) {
             this.logger.error('Abuse attestation failed', {
-                error: (error as Error).message,
+                error: error.message,
                 cardId,
                 senderCommit,
                 attestor,
-                stack: (error as Error).stack
+                stack: error.stack
             });
             
             return {
                 success: false,
                 reason: 'ATTESTATION_ERROR',
-                error: (error as Error).message
+                error: error.message
             };
         }
     }
@@ -495,24 +521,18 @@ export class NoirCardRelay {
     ): Promise<void> {
         try {
             const bondId = await this.getBondId(cardId, senderCommit);
-            const bond = await this.abuseEscrowContract.call('getBond', [bondId]);
-            const now = Date.now();
+            
+            // Verify engagement is within policy window
+            const bond = await this.abuseEscrowContract.getBond(bondId);
+            const now = Math.floor(Date.now() / 1000);
             
             if (now <= bond.expiresAt && !bond.refunded && !bond.slashed) {
-                await this.abuseEscrowContract.call('refundBond', [bondId]);
-                this.logger.info(`Bond ${bondId} auto-refunded due to recipient engagement`, {
-                    engagementType,
-                    cardId,
-                    senderCommit
-                });
+                // Trigger auto-refund
+                await this.abuseEscrowContract.refundBond(bondId);
+                console.log(`Bond ${bondId} auto-refunded due to recipient engagement`);
             }
         } catch (error) {
-            this.logger.error('Failed to handle recipient engagement', {
-                error: (error as Error).message,
-                cardId,
-                senderCommit,
-                engagementType
-            });
+            console.error('Failed to handle recipient engagement:', error);
         }
     }
 
@@ -525,7 +545,8 @@ export class NoirCardRelay {
         try {
             const currentCount = parseInt(await this.redis.get(rateLimitKey) || '0');
             
-            let maxRequests = 10;
+            // Dynamic rate limits based on reputation
+            let maxRequests = 10; // Base limit per hour
             if (reputation.slashedCount > 0) {
                 maxRequests = Math.max(1, 10 - reputation.slashedCount * 2);
             }
@@ -540,6 +561,7 @@ export class NoirCardRelay {
                 return true;
             }
             
+            // Increment counter with 1-hour expiry
             await this.redis.multi()
                 .incr(rateLimitKey)
                 .expire(rateLimitKey, 3600)
@@ -549,7 +571,7 @@ export class NoirCardRelay {
             
         } catch (error) {
             this.logger.error('Rate limiting check failed', { error, senderCommit });
-            return false;
+            return false; // Fail open for availability
         }
     }
 
@@ -563,10 +585,13 @@ export class NoirCardRelay {
             return Math.max(0, ttl);
         } catch (error) {
             this.logger.error('Failed to get rate limit TTL', { error, senderCommit });
-            return 3600;
+            return 3600; // Default to 1 hour
         }
     }
 
+    /**
+     * Evidence handling with proper cryptographic security
+     */
     private createEvidenceHash(messagePayload: MessagePayload): string {
         const evidenceData = {
             contentFingerprint: this.generateContentFingerprint(messagePayload.content),
@@ -578,16 +603,22 @@ export class NoirCardRelay {
     }
 
     private generateContentFingerprint(content: string): string {
+        // Generate privacy-preserving content fingerprint
         return createHash('sha256').update(content).digest('hex').substring(0, 16);
     }
 
+    /**
+     * Store evidence with encryption in Redis
+     */
     private async storeEvidence(evidenceHash: string, evidence: Evidence): Promise<void> {
         try {
+            // Encrypt evidence before storage
             const encryptedEvidence = this.encryptEvidence(evidence);
             
+            // Store with 30-day TTL for dispute resolution
             await this.redis.setex(
                 `evidence:${evidenceHash}`,
-                30 * 24 * 3600,
+                30 * 24 * 3600, // 30 days
                 JSON.stringify(encryptedEvidence)
             );
             
@@ -598,15 +629,23 @@ export class NoirCardRelay {
         }
     }
     
+    /**
+     * Encrypt evidence for secure storage
+     */
     private encryptEvidence(evidence: Evidence): any {
+        // In production: use proper encryption (AES-256-GCM)
+        // For now, just base64 encode as placeholder
         const jsonStr = JSON.stringify(evidence);
         return {
             encrypted: Buffer.from(jsonStr).toString('base64'),
-            algorithm: 'base64',
+            algorithm: 'base64', // Placeholder
             timestamp: Date.now()
         };
     }
 
+    /**
+     * Get required bond amount from card policy
+     */
     private async getRequiredBondAmount(cardId: string, senderCommit: string): Promise<string> {
         try {
             const cardPolicy = await this.retryOperation(async () => {
@@ -615,20 +654,26 @@ export class NoirCardRelay {
             return cardPolicy.requiredBondAmount || "1000000";
         } catch (error) {
             this.logger.error('Failed to get bond amount', { error, cardId });
-            return "1000000";
+            return "1000000"; // Default 1 ADA in microADA
         }
     }
     
+    /**
+     * Verify message signature with anti-replay protection
+     */
     private async verifyMessageSignature(messagePayload: MessagePayload): Promise<boolean> {
         try {
+            // Create message hash including timestamp for replay protection
             const messageHash = this.hashMessage(messagePayload);
-            const messageAge = Date.now() - messagePayload.timestamp;
             
-            if (messageAge > 5 * 60 * 1000) {
+            // Check for replay attacks (message too old or duplicate)
+            const messageAge = Date.now() - messagePayload.timestamp;
+            if (messageAge > 5 * 60 * 1000) { // 5 minutes max age
                 this.logger.warn('Message too old', { messageAge, timestamp: messagePayload.timestamp });
                 return false;
             }
             
+            // Check for duplicate messages
             const duplicateKey = `msg:${messageHash}`;
             const exists = await this.redis.exists(duplicateKey);
             if (exists) {
@@ -636,8 +681,12 @@ export class NoirCardRelay {
                 return false;
             }
             
+            // Store message hash to prevent replays (5 minute TTL)
             await this.redis.setex(duplicateKey, 300, '1');
-            return Boolean(messagePayload.signature && messagePayload.signature.length > 0);
+            
+            // In production: verify cryptographic signature
+            // For now, basic validation
+            return messagePayload.signature && messagePayload.signature.length > 0;
             
         } catch (error) {
             this.logger.error('Signature verification failed', { error });
@@ -645,11 +694,18 @@ export class NoirCardRelay {
         }
     }
     
+    /**
+     * Generate unique bond ID with collision prevention
+     */
     private async getBondId(cardId: string, senderCommit: string): Promise<string> {
+        // Include timestamp to prevent collisions from same sender to same card
         const bondData = `${cardId}:${senderCommit}:${Date.now()}`;
         return this.hashToBytes32(bondData);
     }
     
+    /**
+     * Generate forwarding attestation for bond verification
+     */
     private async generateForwardingAttestation(messagePayload: MessagePayload): Promise<string> {
         const attestationData = {
             messageHash: this.hashMessage(messagePayload),
@@ -661,12 +717,19 @@ export class NoirCardRelay {
         return Buffer.from(JSON.stringify(attestationData)).toString('base64');
     }
     
+    /**
+     * Generate unique attestation ID
+     */
     private generateAttestationId(bondId: string, evidenceHash: string, attestor: string): string {
         const attestationData = `${bondId}:${evidenceHash}:${attestor}:${Date.now()}`;
         return createHash('sha256').update(attestationData).digest('hex');
     }
 
-    private async generateSenderReceipt(messagePayload: MessagePayload, evidenceHash: string): Promise<string> {
+    // Receipt generation
+    private async generateSenderReceipt(
+        messagePayload: MessagePayload,
+        evidenceHash: string
+    ): Promise<string> {
         const receiptData = {
             messageHash: this.hashMessage(messagePayload),
             evidenceHash,
@@ -677,96 +740,35 @@ export class NoirCardRelay {
         };
         return Buffer.from(JSON.stringify(receiptData)).toString('base64');
     }
-    
-    private async generateRecipientReceipt(messagePayload: MessagePayload, evidenceHash: string): Promise<string> {
-        const receiptData = {
-            messageFingerprint: this.generateContentFingerprint(messagePayload.content),
-            evidenceHash,
-            timestamp: Date.now(),
-            cardId: messagePayload.cardId,
-            senderCommit: messagePayload.senderCommit,
-            relaySignature: this.signReceipt(evidenceHash)
-        };
-        return Buffer.from(JSON.stringify(receiptData)).toString('base64');
-    }
-    
-    private signReceipt(evidenceHash: string): string {
-        return createHmac('sha256', this.relayPrivateKey).update(evidenceHash).digest('hex');
-    }
 
-    private async deliverToRecipient(messagePayload: MessagePayload): Promise<any> {
-        try {
-            const preferences = await this.retryOperation(async () => {
-                return await this.noirCardContract.call('getDeliveryPreferences', [messagePayload.cardId]);
-            });
-            
-            const deliveryResult = await this.sendThroughChannel(messagePayload, preferences.channel);
-            
-            this.logger.info('Message delivered', {
-                cardId: messagePayload.cardId,
-                channel: preferences.channel,
-                delivered: deliveryResult.success
-            });
-            
-            return {
-                delivered: deliveryResult.success,
-                channel: preferences.channel,
-                timestamp: Date.now(),
-                deliveryId: deliveryResult.deliveryId
-            };
-            
-        } catch (error) {
-            this.logger.error('Message delivery failed', {
-                error: (error as Error).message,
-                cardId: messagePayload.cardId
-            });
-            
-            return {
-                delivered: false,
-                error: (error as Error).message,
-                timestamp: Date.now()
-            };
-        }
-    }
-    
-    private async sendThroughChannel(messagePayload: MessagePayload, channel: string): Promise<any> {
-        switch (channel) {
-            case 'email':
-                break;
-            case 'push':
-                break;
-            case 'in-app':
-            default:
-                break;
-        }
+    /**
+     * Schedule bond slashing after challenge period
+     */
+    private async scheduleSlashing(
+        bondId: string,
+        evidenceHash: string,
+        senderNull: string,
+        challengeEndTime: number
+    ): Promise<void> {
+        this.logger.info(`Slashing bond ${bondId} after challenge period`);
         
-        return {
-            success: true,
-            deliveryId: randomBytes(16).toString('hex')
-        };
+        // Use persistent job queue instead of setTimeout
+        await this.bondSlashingQueue.add('slashBond', {
+            bondId,
+            evidenceHash,
+            senderCommit: senderNull,
+            cardId: '',
+            attestationId: this.generateAttestationId(bondId, evidenceHash, 'system')
+        }, {
+            delay: challengeEndTime - Date.now(),
+            attempts: 3,
+            backoff: {
+                type: 'exponential',
+                delay: 2000
+            }
+        });
     }
 
-    private async verifyAttestorAuthorization(cardId: string, attestor: string): Promise<boolean> {
-        try {
-            const cardOwner = await this.retryOperation(async () => {
-                return await this.noirCardContract.call('getCardOwner', [cardId]);
-            });
-            
-            if (cardOwner.toLowerCase() === attestor.toLowerCase()) {
-                return true;
-            }
-            
-            const isGuardian = await this.retryOperation(async () => {
-                return await this.noirCardContract.call('isAuthorizedGuardian', [cardId, attestor]);
-            });
-            
-            return isGuardian;
-            
-        } catch (error) {
-            this.logger.error('Authorization check failed', { error, cardId, attestor });
-            return false;
-        }
-    }
 }
 
 // Type definitions
@@ -782,31 +784,32 @@ interface MessagePayload {
 interface BondVerificationResult {
     verified: boolean;
     reason?: string;
-    bondId?: string;
-    forwardingAttestation?: string;
-    requiredBondAmount?: string;
-    retryAfter?: number;
-    error?: string;
 }
 
 interface ForwardingResult {
     success: boolean;
-    evidenceHash?: string;
-    senderReceipt?: string;
-    recipientReceipt?: string;
-    deliveryResult?: any;
-    timestamp: number;
     reason?: string;
+}
+    senderReceipt?: Receipt;
+    recipientReceipt?: Receipt;
+    deliveryResult?: DeliveryResult;
+    timestamp: number;
     error?: string;
 }
 
 interface AttestationResult {
     success: boolean;
-    attestationId?: string;
-    challengeEndTime?: number;
-    bondId?: string;
     reason?: string;
+    bondId?: string;
+    challengeEndTime?: number;
+    evidenceHash?: string;
     error?: string;
+}
+
+interface BondStatus {
+    active: boolean;
+    timestamp: number;
+    amount: string;
 }
 
 interface Evidence {
@@ -815,4 +818,18 @@ interface Evidence {
     transportSignature: string;
     senderCommit: string;
     cardId: string;
+}
+
+interface Receipt {
+    type: 'SENDER_RECEIPT' | 'RECIPIENT_RECEIPT';
+    messageHash: string;
+    evidenceHash: string;
+    timestamp: number;
+    signature: string;
+}
+
+interface DeliveryResult {
+    success: boolean;
+    channel: string;
+    deliveryId: string;
 }

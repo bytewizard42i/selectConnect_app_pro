@@ -128,11 +128,17 @@ senderNull = PRF(secretKey, cardId)
 git clone https://github.com/bytewizard42i/NoirCard_me.git
 cd NoirCard_me && npm install
 
-# Deploy to Midnight testnet
-npm run compile-contracts
-npm run deploy-contracts
+# Configure environment
+cp .env.example .env
+# Edit .env with your contract addresses and configuration
 
-# Launch application
+# Start Redis (required for relay service)
+redis-server
+
+# Launch relay service
+npm run relay
+
+# Launch frontend application
 npm run dev
 ```
 
