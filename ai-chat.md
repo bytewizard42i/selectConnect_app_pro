@@ -357,4 +357,23 @@ To make evaluation self-contained for judges, we replaced the outdated distribut
 
 ---
 
+## Session 4: README polish and repackage request
+**Date**: August 30, 2025  
+**Time**: ~22:15 - 22:22 EST
+
+### Context
+Requested to (1) fix broken top image in README and replace joker icon with business/ID card, and (2) repackage the repo into a fresh zip reflecting current state after chat log updates.
+
+### Actions
+- Fixed README image path to `media/NoirCard-image.png`
+- Swapped title icon from to for professional ID/business card feel
+- Planned fresh packaging and README Getting Started update to reference the new archive
+
+### Next
+- Generate new `NoirCard_Current_YYYYMMDD_HHMMSS.zip`
+- Remove previous archive and update README unzip step
+- Commit and push with a clever message
+
+---
+
 *This chat log will be updated with each significant development session.*

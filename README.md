@@ -134,7 +134,7 @@ senderNull = PRF(secretKey, cardId)
 
 ```bash
 # Download and setup
-unzip NoirCard_Current_20250830_221006.zip
+unzip NoirCard_Current_20250830_222245.zip
 cd NoirCard_me && npm install
 
 # Configure environment
