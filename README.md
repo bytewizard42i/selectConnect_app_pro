@@ -1,4 +1,4 @@
-[NoirCard](../NoirCard-image.png)
+[NoirCard](NoirCard_me/media/NoirCard-image.png)
 
 # 🃏 NoirCard: The Future of Safe Contact Connections and Networking
 
