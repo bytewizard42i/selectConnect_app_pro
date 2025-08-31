@@ -1,6 +1,6 @@
-![NoirCard](NoirCard_me/media/NoirCard-image.png)
+![NoirCard](media/NoirCard-image.png)
 
-# 🃏 NoirCard: The Future of Safe Contact Connections and Networking
+# 🪪 NoirCard: The Future of Safe Contact Connections and Networking
 
 **Dear Midnight Judges,**
 
