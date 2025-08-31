@@ -1,7 +1,7 @@
 
 
 
-![NoirCard](../ChatGPT%20Image%20Jun%2025,%202025,%2005_03_05%20PM.png)
+![NoirCard](../NoirCard-image.png)
 
 # 🃏 NoirCard: The Future of Safe Contact Connections and Networking
 
