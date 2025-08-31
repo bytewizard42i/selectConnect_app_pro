@@ -4,13 +4,35 @@ pragma language_version 0.16;
 
 import CompactStandardLibrary;
 
+// ==============================================
+// AbuseEscrow (NoirCard) — Compact v0.16 example
+// ----------------------------------------------
+// Purpose:
+//  - Require senders to post a refundable "abuse bond" before contacting a NoirCard.
+//  - Bonds deter spam/abuse. Honest interaction => refund. Abuse => slash the bond.
+// What is public vs private:
+//  - Public: bond IDs, card IDs, amounts, timestamps, minimal reputation counters.
+//  - Private: sender identity is hidden behind senderCommit (a commitment produced off-chain).
+// How to read:
+//  - export ledger ...   => on-chain public state
+//  - constructor()       => initializes state at deploy
+//  - witness ...         => private inputs provided by the caller (not written publicly)
+//  - export circuit ...  => public entry points that assert conditions and update state
+
 // Public on-chain state
+// round: epoch counter that can be used to rotate keys/authorization semantics across time
 export ledger round: Counter; // epoch counter for rotating auth if desired
+// bonds: set of bond IDs that exist
 export ledger bonds: Set<Bytes<32>>;                                         // bondId
+// bond_meta: details for each bondId
 export ledger bond_meta: Set<(Bytes<32>, Bytes<32>, Bytes<32>, Uint<64>, Uint<64>, Bool, Bool)>; // (bondId, cardId, senderCommit, amount, expiresAt, refunded, slashed)
+// safety_pool: per-card slashed balance accumulator
 export ledger safety_pool: Set<(Bytes<32>, Uint<64>)>;                        // (cardId, balance)
+// sender_rep: coarse reputation counters keyed by sender commitment (not PII)
 export ledger sender_rep: Set<(Bytes<32>, Uint<32>, Uint<32>, Uint<64>, Uint<64>)>; // (senderCommit, totalBonds, slashedCount, lastSlashTime, totalSlashed)
+// bond_config: per-card configuration for minimums/TTLs and dynamic pricing
 export ledger bond_config: Set<(Bytes<32>, Uint<64>, Uint<64>, Bool, Uint<64>)>;     // (cardId, minBondAmount, defaultTTL, dynamicPricing, riskMultiplier)
+// card_owner: pair linking a card to an owner identifier (Bytes<32>), used for authorization
 export ledger card_owner: Set<(Bytes<32>, Bytes<32>)>;                         // (cardId, ownerId)
 
 // Constructor initializes epoch
@@ -23,11 +45,13 @@ witness ownerSecret(): Bytes<32>;
 witness rand(): Bytes<32>;
 
 // Helper: derive ownerId from epoch-bound secret
-circuit ownerId(round: Field, sk: Bytes<32}): Bytes<32> {
+// The owner proves control via a secret; we derive a stable public identifier from it and the current epoch.
+circuit ownerId(round: Field, sk: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([ (round as Bytes<32>), sk ]);
 }
 
 // Helper: calculate dynamic required bond amount
+// If dynamicPricing is enabled, increase the minimum bond based on historical slashes for this senderCommit.
 circuit calcRequired(minBond: Uint<64>, dynPricing: Bool, riskMult: Uint<64>, senderCommit: Bytes<32>): Uint<64> {
   if (!dynPricing) { return minBond }
   let (sc, total, slashedCount, _lastSlash, _totalSlashed) = getOrDefault(sender_rep, senderCommit, (senderCommit, 0u32, 0u32, 0u64, 0u64));
@@ -37,6 +61,14 @@ circuit calcRequired(minBond: Uint<64>, dynPricing: Bool, riskMult: Uint<64>, se
 }
 
 // Post a bond to contact a NoirCard
+// Inputs:
+//  - cardId: target NoirCard ID
+//  - senderCommit: commitment to sender identity (keeps sender private)
+//  - amount: posted amount (must meet required threshold)
+//  - nowTs, ttl: timestamps for expiry
+// Effects:
+//  - Creates a new bondId and records its metadata
+//  - Increments sender reputation totalBonds
 export circuit postBond(
   cardId: Bytes<32>,
   senderCommit: Bytes<32>,
@@ -63,6 +95,9 @@ export circuit postBond(
 }
 
 // Refund bond (called by recipient engagement or TTL expiry)
+// Policy:
+//  - Anyone can trigger a refund after expiry
+//  - Before expiry, must be an authorized party (modeled by authorizerIsOwner flag provided by caller's proof)
 export circuit refundBond(
   bondId: Bytes<32>,
   nowTs: Uint<64>,
@@ -78,6 +113,12 @@ export circuit refundBond(
 }
 
 // Slash bond on abuse attestation (owner-only)
+// Authorization:
+//  - The owner of the card proves ownership via ownerSecret witness -> ownerId -> membership in card_owner
+// Effects:
+//  - Marks the bond slashed
+//  - Updates sender reputation (increments slashedCount, records lastSlashTime, accumulates totalSlashed)
+//  - Allocates half of the slashed amount to the card's safety_pool
 export circuit slashBond(
   bondId: Bytes<32>,
   cardId: Bytes<32>,
@@ -107,6 +148,11 @@ export circuit slashBond(
 }
 
 // Configure bond parameters for a card (owner-only)
+// Fields:
+//  - minBondAmount: minimum bond required
+//  - defaultTTL: fallback expiry if caller does not specify TTL
+//  - dynamicPricing: enable risk-based increases for repeat offenders
+//  - riskMultiplier: increase per prior slash (basis points-like)
 export circuit configureBond(
   cardId: Bytes<32>,
   minBondAmount: Uint<64>,

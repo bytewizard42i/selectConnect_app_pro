@@ -4,6 +4,19 @@ pragma language_version 0.16;
 
 import CompactStandardLibrary;
 
+// ==============================================
+// NoirCard — Compact v0.16 example
+// --------------------------------
+// Purpose:
+//  - Privacy-preserving digital business card.
+//  - Stores only commitments (hash-like values) on-chain; real data is kept off-chain.
+//  - Supports progressive reveal (levels), and per-accessor links you can revoke.
+// How to read:
+//  - export ledger ...   => on-chain public state (anyone can read)
+//  - constructor()       => runs on deploy, initializes counters
+//  - witness ...         => private inputs supplied by the caller (not stored publicly)
+//  - export circuit ...  => public entry points that verify conditions and update state
+
 // Domain constants (for hashing/commitments)
 const DOMAIN_CARD  : Bytes<32> = pad(32, "nc:card");
 const DOMAIN_LINK  : Bytes<32> = pad(32, "nc:link");
@@ -13,14 +26,23 @@ const DOMAIN_LEVEL : Bytes<32> = pad(32, "nc:level");
 export enum CardState { INACTIVE, ACTIVE }
 
 // Public on-chain state (minimal public metadata)
+// round: epoch counter (lets you rotate identities over time if desired)
 export ledger round: Counter;                                          // epoch counter
+// cards: set of all card IDs that exist
 export ledger cards: Set<Bytes<32>>;                                   // cardId
+// card_state: stores whether each card is ACTIVE or INACTIVE
 export ledger card_state: Set<(Bytes<32>, CardState)>;                 // (cardId, state)
+// card_owner: binds a card to an owner identifier (Bytes<32>) derived from a secret witness
 export ledger card_owner: Set<(Bytes<32>, Bytes<32>)>;                 // (cardId, ownerId)
+// card_policy: public policy metadata (e.g., whether an abuse bond is required, default amounts)
 export ledger card_policy: Set<(Bytes<32>, Bool, Uint<64>, Uint<64>)>; // (cardId, requiresBond, bondAmount, revealDelay)
+// contact_commit: commitment to your contact info ciphertext (actual data held off-chain)
 export ledger contact_commit: Set<(Bytes<32>, Bytes<32>)>;             // (cardId, contactCommitment)
+// reveal_tree: Merkle tree accumulating commitments for progressive reveal levels
 export ledger reveal_tree: MerkleTree;                                 // commitments of reveal levels
+// links: set of generated access link IDs
 export ledger links: Set<Bytes<32>>;                                   // linkId
+// link_meta: metadata for links: which card, when created/expires, revoked?, current reveal level index
 export ledger link_meta: Set<(Bytes<32>, Bytes<32>, Uint<64>, Uint<64>, Bool, Uint<8>)>; // (linkId, cardId, createdAt, expiresAt, revoked, currentLevel)
 
 // Initialize epoch on deploy
@@ -51,11 +73,19 @@ circuit makeLinkId(cardId: Bytes<32>, accessorId: Bytes<32>, createdAt: Uint<64>
 }
 
 // Helper: accessorId from epoch and accessor secret
+// This function derives an accessorId from the current round and an accessor secret.
 circuit accessorId(round: Field, sk: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<3, Bytes<32>>>([ DOMAIN_LINK, (round as Bytes<32>), sk ]);
 }
 
 // Public: create a card (stores only commitments on-chain)
+// Inputs:
+//  - aliasHash: hash of your chosen alias or handle (public, not PII)
+//  - requiresBond/bondAmount/revealDelay: policy knobs for integrations
+//  - contactCiphertext: your encrypted contact data (ciphertext), committed on-chain
+// Effects:
+//  - Derives ownerId from your private ownerSecret witness
+//  - Creates and activates a new card with public policy and contact commitment
 export circuit createCard(
   aliasHash: Bytes<32>,
   requiresBond: Bool,
@@ -83,6 +113,9 @@ export circuit createCard(
 }
 
 // Public: add a reveal level commitment (progressive disclosure)
+// Idea:
+//  - Each reveal level is a commitment to an encrypted blob.
+//  - We append commitments in a Merkle tree so later users can prove inclusion.
 export circuit addRevealLevel(cardId: Bytes<32>, levelCiphertext: Bytes<32>): [] {
   assert(contains(cards, cardId), "missing card");
   assert(contains(card_state, (cardId, CardState.ACTIVE)), "inactive");
@@ -93,6 +126,8 @@ export circuit addRevealLevel(cardId: Bytes<32>, levelCiphertext: Bytes<32>): []
 }
 
 // Public: generate a link (stores meta, no PII)
+// Each accessor presents a witness secret; we derive an accessorId from it and the epoch.
+// The link stores only meta (createdAt, expiresAt, revoked flag, and current reveal level index).
 export circuit generateLink(cardId: Bytes<32>, createdAt: Uint<64>, ttl: Uint<64>): Bytes<32> {
   assert(contains(cards, cardId), "missing card");
   assert(contains(card_state, (cardId, CardState.ACTIVE)), "inactive");
@@ -110,6 +145,8 @@ export circuit generateLink(cardId: Bytes<32>, createdAt: Uint<64>, ttl: Uint<64
 }
 
 // Public: access next level by proving membership of the level commit
+// The accessor provides the level ciphertext; we re-commit it and check membership in the Merkle tree.
+// On success, we advance the link's currentLevel and return the ciphertext for off-chain decryption.
 export circuit accessNextLevel(
   linkId: Bytes<32>,
   nowTs: Uint<64>,
@@ -132,6 +169,7 @@ export circuit accessNextLevel(
 }
 
 // Public: revoke a link (owner-only)
+// The owner proves control via ownerSecret -> ownerId, then marks the link revoked.
 export circuit revokeLink(cardId: Bytes<32>, linkId: Bytes<32>): [] {
   const sk = ownerSecret();
   const oid = ownerId(round, sk);
@@ -145,6 +183,7 @@ export circuit revokeLink(cardId: Bytes<32>, linkId: Bytes<32>): [] {
 }
 
 // Public: deactivate card (owner-only)
+// Flips the card state to INACTIVE to stop future link operations.
 export circuit deactivateCard(cardId: Bytes<32>): [] {
   const sk = ownerSecret();
   const oid = ownerId(round, sk);
