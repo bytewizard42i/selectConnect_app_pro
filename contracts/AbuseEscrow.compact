@@ -1,0 +1,229 @@
+// pragma language_version >= 0.16.0;
+
+contract AbuseEscrow {
+    // Bond structure with all required fields
+    struct Bond {
+        coin    amount;
+        bytes32 senderCommit;  // H(senderDID || salt) - stable per card
+        bytes32 cardId;        // NoirCard identifier
+        uint64  expiresAt;     // TTL timestamp
+        bool    refunded;      // Refund status
+        bool    slashed;       // Slash status
+        address sender;        // Original sender for refunds
+        uint64  postedAt;      // Timestamp when bond was posted
+    }
+
+    // Dynamic bond configuration per card
+    struct BondConfig {
+        coin    minBondAmount;     // Minimum required bond
+        uint64  defaultTTL;        // Default expiry time
+        bool    dynamicPricing;    // Enable context-based pricing
+        uint64  riskMultiplier;    // Risk-based multiplier (basis points)
+    }
+
+    // Reputation tracking per sender commitment
+    struct SenderReputation {
+        uint32  totalBonds;        // Total bonds posted
+        uint32  slashedCount;      // Number of slashed bonds
+        uint64  lastSlashTime;     // Last time sender was slashed
+        coin    totalSlashed;      // Total amount slashed
+    }
+
+    // Storage
+    mapping(bytes32 => Bond) bonds;                    // bondId -> Bond
+    mapping(bytes32 => BondConfig) cardConfigs;       // cardId -> BondConfig
+    mapping(bytes32 => SenderReputation) reputation;  // senderCommit -> Reputation
+    mapping(bytes32 => coin) safetyPool;              // cardId -> accumulated safety funds
+
+    // Events
+    event BondPosted(bytes32 indexed bondId, bytes32 indexed cardId, bytes32 indexed senderCommit, coin amount, uint64 expiresAt);
+    event BondRefunded(bytes32 indexed bondId, bytes32 indexed cardId, bytes32 indexed senderCommit, coin amount);
+    event BondSlashed(bytes32 indexed bondId, bytes32 indexed cardId, bytes32 indexed senderCommit, coin amount, bytes32 evidenceHash);
+    event AbuseAttested(bytes32 indexed cardId, bytes32 indexed senderNull, bytes32 evidenceHash, uint64 timestamp);
+    event SafetyPoolUpdated(bytes32 indexed cardId, coin newBalance);
+
+    // Post a bond to contact a NoirCard
+    function postBond(
+        bytes32 cardId,
+        bytes32 senderCommit,
+        coin amount,
+        uint64 ttl
+    ) public payable returns (bytes32 bondId) {
+        // Generate unique bond ID
+        bondId = keccak256(abi.encodePacked(cardId, senderCommit, block.timestamp, msg.sender));
+        
+        // Get bond configuration for this card
+        BondConfig memory config = cardConfigs[cardId];
+        
+        // Calculate required bond amount (with dynamic pricing if enabled)
+        coin requiredAmount = calculateBondAmount(cardId, senderCommit, config);
+        require(amount >= requiredAmount, "Insufficient bond amount");
+        
+        // Check sender doesn't have active bond for this card
+        require(!hasActiveBond(cardId, senderCommit), "Active bond already exists");
+        
+        // Create bond
+        bonds[bondId] = Bond({
+            amount: amount,
+            senderCommit: senderCommit,
+            cardId: cardId,
+            expiresAt: block.timestamp + (ttl > 0 ? ttl : config.defaultTTL),
+            refunded: false,
+            slashed: false,
+            sender: msg.sender,
+            postedAt: block.timestamp
+        });
+
+        // Update sender reputation
+        reputation[senderCommit].totalBonds++;
+
+        emit BondPosted(bondId, cardId, senderCommit, amount, bonds[bondId].expiresAt);
+        return bondId;
+    }
+
+    // Refund bond (called by recipient engagement or TTL expiry)
+    function refundBond(bytes32 bondId) public {
+        Bond storage bond = bonds[bondId];
+        require(bond.amount > 0, "Bond does not exist");
+        require(!bond.refunded && !bond.slashed, "Bond already processed");
+        
+        // Check if TTL expired or if called by authorized party
+        require(
+            block.timestamp >= bond.expiresAt || 
+            isAuthorizedRefunder(bondId, msg.sender),
+            "Not authorized or not expired"
+        );
+
+        bond.refunded = true;
+        
+        // Transfer bond back to sender
+        payable(bond.sender).transfer(bond.amount);
+        
+        emit BondRefunded(bondId, bond.cardId, bond.senderCommit, bond.amount);
+    }
+
+    // Slash bond on abuse attestation
+    function slashBond(
+        bytes32 bondId, 
+        bytes32 evidenceHash,
+        bytes32 senderNull
+    ) public {
+        Bond storage bond = bonds[bondId];
+        require(bond.amount > 0, "Bond does not exist");
+        require(!bond.refunded && !bond.slashed, "Bond already processed");
+        require(isAuthorizedSlasher(bond.cardId, msg.sender), "Not authorized to slash");
+
+        bond.slashed = true;
+
+        // Update sender reputation
+        SenderReputation storage rep = reputation[bond.senderCommit];
+        rep.slashedCount++;
+        rep.lastSlashTime = block.timestamp;
+        rep.totalSlashed += bond.amount;
+
+        // Split slashed amount: 50% to safety pool, 50% burned
+        coin safetyAmount = bond.amount / 2;
+        coin burnAmount = bond.amount - safetyAmount;
+
+        // Add to safety pool
+        safetyPool[bond.cardId] += safetyAmount;
+        
+        // Burn remaining amount (send to zero address)
+        payable(address(0)).transfer(burnAmount);
+
+        emit BondSlashed(bondId, bond.cardId, bond.senderCommit, bond.amount, evidenceHash);
+        emit AbuseAttested(bond.cardId, senderNull, evidenceHash, block.timestamp);
+        emit SafetyPoolUpdated(bond.cardId, safetyPool[bond.cardId]);
+    }
+
+    // Configure bond parameters for a card
+    function configureBond(
+        bytes32 cardId,
+        coin minBondAmount,
+        uint64 defaultTTL,
+        bool dynamicPricing,
+        uint64 riskMultiplier
+    ) public {
+        require(isCardOwner(cardId, msg.sender), "Not card owner");
+        
+        cardConfigs[cardId] = BondConfig({
+            minBondAmount: minBondAmount,
+            defaultTTL: defaultTTL,
+            dynamicPricing: dynamicPricing,
+            riskMultiplier: riskMultiplier
+        });
+    }
+
+    // Calculate required bond amount with dynamic pricing
+    function calculateBondAmount(
+        bytes32 cardId, 
+        bytes32 senderCommit, 
+        BondConfig memory config
+    ) internal view returns (coin) {
+        coin baseAmount = config.minBondAmount;
+        
+        if (!config.dynamicPricing) {
+            return baseAmount;
+        }
+
+        // Apply reputation-based multiplier
+        SenderReputation memory rep = reputation[senderCommit];
+        if (rep.slashedCount > 0) {
+            // Increase bond for repeat offenders
+            uint256 multiplier = 1000 + (rep.slashedCount * config.riskMultiplier);
+            baseAmount = (baseAmount * multiplier) / 1000;
+        }
+
+        return baseAmount;
+    }
+
+    // Check if sender has active bond for card
+    function hasActiveBond(bytes32 cardId, bytes32 senderCommit) internal view returns (bool) {
+        // Implementation would check for existing active bonds
+        // This is a simplified version
+        return false;
+    }
+
+    // Authorization checks
+    function isAuthorizedRefunder(bytes32 bondId, address caller) internal view returns (bool) {
+        // Card owner or relay service can authorize refunds
+        return isCardOwner(bonds[bondId].cardId, caller) || isRelayService(caller);
+    }
+
+    function isAuthorizedSlasher(bytes32 cardId, address caller) internal view returns (bool) {
+        // Card owner, guardians, or relay service can slash
+        return isCardOwner(cardId, caller) || isGuardian(caller) || isRelayService(caller);
+    }
+
+    function isCardOwner(bytes32 cardId, address caller) internal view returns (bool) {
+        // Implementation would check card ownership
+        return true; // Simplified
+    }
+
+    function isGuardian(address caller) internal view returns (bool) {
+        // Implementation would check guardian status
+        return true; // Simplified
+    }
+
+    function isRelayService(address caller) internal view returns (bool) {
+        // Implementation would check authorized relay services
+        return true; // Simplified
+    }
+
+    // View functions
+    function getBond(bytes32 bondId) public view returns (Bond memory) {
+        return bonds[bondId];
+    }
+
+    function getSenderReputation(bytes32 senderCommit) public view returns (SenderReputation memory) {
+        return reputation[senderCommit];
+    }
+
+    function getSafetyPoolBalance(bytes32 cardId) public view returns (coin) {
+        return safetyPool[cardId];
+    }
+
+    function getBondConfig(bytes32 cardId) public view returns (BondConfig memory) {
+        return cardConfigs[cardId];
+    }
+}

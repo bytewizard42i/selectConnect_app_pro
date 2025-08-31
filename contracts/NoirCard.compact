@@ -1,0 +1,280 @@
+// pragma language_version >= 0.16.0;
+
+contract NoirCard {
+    // Core NoirCard structure
+    struct Card {
+        bytes32 cardId;           // Unique card identifier
+        address owner;            // Card owner
+        string  alias;            // Public alias/name
+        bytes32 contactDataHash;  // Hash of encrypted contact data
+        bool    active;           // Card status
+        uint64  createdAt;        // Creation timestamp
+        uint64  expiresAt;        // Expiration timestamp (0 = no expiry)
+        CardPolicy policy;        // Access and reveal policies
+    }
+
+    // Access and reveal policies
+    struct CardPolicy {
+        bool    requiresBond;     // Whether abuse bond is required
+        coin    bondAmount;       // Required bond amount if enabled
+        uint64  revealDelay;      // Progressive reveal delay in seconds
+        uint64  linkTTL;          // Link time-to-live in seconds
+        bool    allowRevocation;  // Whether links can be revoked
+        uint8   maxReveals;       // Maximum number of progressive reveals
+        bytes32 venueRestriction; // Optional venue/context restriction
+    }
+
+    // Contact reveal levels for progressive disclosure
+    struct RevealLevel {
+        uint8   level;            // Reveal level (1-5)
+        string  dataType;         // "name", "email", "phone", "social", "full"
+        bytes32 encryptedData;    // Encrypted contact data for this level
+        bool    requiresApproval; // Whether owner approval is needed
+    }
+
+    // Link tracking for revocable access
+    struct AccessLink {
+        bytes32 linkId;           // Unique link identifier
+        bytes32 cardId;           // Associated card
+        address accessor;         // Who accessed (optional, can be zero for anonymous)
+        bytes32 accessorCommit;   // Accessor commitment for privacy
+        uint64  createdAt;        // Link creation time
+        uint64  expiresAt;        // Link expiration
+        uint64  lastAccessed;     // Last access timestamp
+        bool    revoked;          // Revocation status
+        uint8   currentLevel;     // Current reveal level
+    }
+
+    // Storage
+    mapping(bytes32 => Card) cards;                           // cardId -> Card
+    mapping(bytes32 => RevealLevel[]) cardRevealLevels;       // cardId -> reveal levels
+    mapping(bytes32 => AccessLink) accessLinks;              // linkId -> AccessLink
+    mapping(address => bytes32[]) ownerCards;                 // owner -> cardIds
+    mapping(bytes32 => bytes32[]) cardLinks;                  // cardId -> linkIds
+
+    // Events
+    event CardCreated(bytes32 indexed cardId, address indexed owner, string alias);
+    event CardUpdated(bytes32 indexed cardId, bytes32 newContactDataHash);
+    event CardRevoked(bytes32 indexed cardId, address indexed owner);
+    event LinkGenerated(bytes32 indexed linkId, bytes32 indexed cardId, uint64 expiresAt);
+    event LinkAccessed(bytes32 indexed linkId, bytes32 indexed cardId, uint8 revealLevel);
+    event LinkRevoked(bytes32 indexed linkId, bytes32 indexed cardId);
+    event ContactRevealed(bytes32 indexed cardId, bytes32 indexed linkId, uint8 level);
+
+    // Create a new NoirCard
+    function createCard(
+        string memory alias,
+        bytes32 contactDataHash,
+        CardPolicy memory policy,
+        RevealLevel[] memory revealLevels
+    ) public returns (bytes32 cardId) {
+        // Generate unique card ID
+        cardId = keccak256(abi.encodePacked(msg.sender, alias, block.timestamp));
+        
+        require(cards[cardId].owner == address(0), "Card already exists");
+        require(bytes(alias).length > 0, "Alias required");
+        require(revealLevels.length > 0, "At least one reveal level required");
+
+        // Create card
+        cards[cardId] = Card({
+            cardId: cardId,
+            owner: msg.sender,
+            alias: alias,
+            contactDataHash: contactDataHash,
+            active: true,
+            createdAt: uint64(block.timestamp),
+            expiresAt: policy.linkTTL > 0 ? uint64(block.timestamp + policy.linkTTL) : 0,
+            policy: policy
+        });
+
+        // Store reveal levels
+        for (uint i = 0; i < revealLevels.length; i++) {
+            cardRevealLevels[cardId].push(revealLevels[i]);
+        }
+
+        // Add to owner's cards
+        ownerCards[msg.sender].push(cardId);
+
+        emit CardCreated(cardId, msg.sender, alias);
+        return cardId;
+    }
+
+    // Generate access link for QR code
+    function generateAccessLink(
+        bytes32 cardId,
+        uint64 customTTL,
+        bytes32 accessorCommit
+    ) public returns (bytes32 linkId) {
+        Card storage card = cards[cardId];
+        require(card.active, "Card not active");
+        require(card.owner == msg.sender, "Not card owner");
+        
+        // Check card hasn't expired
+        if (card.expiresAt > 0) {
+            require(block.timestamp < card.expiresAt, "Card expired");
+        }
+
+        // Generate unique link ID
+        linkId = keccak256(abi.encodePacked(cardId, accessorCommit, block.timestamp));
+        
+        // Determine expiration
+        uint64 linkExpiry = customTTL > 0 ? 
+            uint64(block.timestamp + customTTL) : 
+            uint64(block.timestamp + card.policy.linkTTL);
+
+        // Create access link
+        accessLinks[linkId] = AccessLink({
+            linkId: linkId,
+            cardId: cardId,
+            accessor: address(0), // Anonymous initially
+            accessorCommit: accessorCommit,
+            createdAt: uint64(block.timestamp),
+            expiresAt: linkExpiry,
+            lastAccessed: 0,
+            revoked: false,
+            currentLevel: 0
+        });
+
+        // Track link for card
+        cardLinks[cardId].push(linkId);
+
+        emit LinkGenerated(linkId, cardId, linkExpiry);
+        return linkId;
+    }
+
+    // Access card via link (progressive reveal)
+    function accessCard(
+        bytes32 linkId,
+        uint8 requestedLevel,
+        bytes32 accessorCommit
+    ) public returns (bytes32 revealedData) {
+        AccessLink storage link = accessLinks[linkId];
+        Card storage card = cards[link.cardId];
+        
+        require(link.linkId != bytes32(0), "Link not found");
+        require(!link.revoked, "Link revoked");
+        require(block.timestamp < link.expiresAt, "Link expired");
+        require(card.active, "Card not active");
+        require(link.accessorCommit == accessorCommit, "Invalid accessor");
+
+        // Check if requested level is available
+        require(requestedLevel > 0 && requestedLevel <= cardRevealLevels[link.cardId].length, "Invalid reveal level");
+        
+        // Progressive reveal: can only access next level
+        require(requestedLevel <= link.currentLevel + 1, "Must progress sequentially");
+
+        // Check reveal delay for progressive disclosure
+        if (link.currentLevel > 0 && card.policy.revealDelay > 0) {
+            require(
+                block.timestamp >= link.lastAccessed + card.policy.revealDelay,
+                "Reveal delay not met"
+            );
+        }
+
+        // Get reveal level data
+        RevealLevel storage revealLevel = cardRevealLevels[link.cardId][requestedLevel - 1];
+        
+        // Check if owner approval is required for this level
+        if (revealLevel.requiresApproval && requestedLevel > link.currentLevel) {
+            // In a real implementation, this would trigger an approval workflow
+            // For now, we'll assume approval is granted
+        }
+
+        // Update link state
+        link.currentLevel = requestedLevel;
+        link.lastAccessed = uint64(block.timestamp);
+        if (link.accessor == address(0)) {
+            link.accessor = msg.sender;
+        }
+
+        emit LinkAccessed(linkId, link.cardId, requestedLevel);
+        emit ContactRevealed(link.cardId, linkId, requestedLevel);
+
+        return revealLevel.encryptedData;
+    }
+
+    // Revoke access link
+    function revokeLink(bytes32 linkId) public {
+        AccessLink storage link = accessLinks[linkId];
+        Card storage card = cards[link.cardId];
+        
+        require(link.linkId != bytes32(0), "Link not found");
+        require(card.owner == msg.sender, "Not authorized");
+        require(card.policy.allowRevocation, "Revocation not allowed");
+        require(!link.revoked, "Already revoked");
+
+        link.revoked = true;
+        
+        emit LinkRevoked(linkId, link.cardId);
+    }
+
+    // Update card contact data
+    function updateCard(
+        bytes32 cardId,
+        bytes32 newContactDataHash,
+        RevealLevel[] memory newRevealLevels
+    ) public {
+        Card storage card = cards[cardId];
+        require(card.owner == msg.sender, "Not card owner");
+        require(card.active, "Card not active");
+
+        card.contactDataHash = newContactDataHash;
+        
+        // Clear old reveal levels
+        delete cardRevealLevels[cardId];
+        
+        // Add new reveal levels
+        for (uint i = 0; i < newRevealLevels.length; i++) {
+            cardRevealLevels[cardId].push(newRevealLevels[i]);
+        }
+
+        emit CardUpdated(cardId, newContactDataHash);
+    }
+
+    // Deactivate card
+    function revokeCard(bytes32 cardId) public {
+        Card storage card = cards[cardId];
+        require(card.owner == msg.sender, "Not card owner");
+        require(card.active, "Card already inactive");
+
+        card.active = false;
+        
+        // Revoke all active links
+        bytes32[] storage links = cardLinks[cardId];
+        for (uint i = 0; i < links.length; i++) {
+            if (!accessLinks[links[i]].revoked) {
+                accessLinks[links[i]].revoked = true;
+                emit LinkRevoked(links[i], cardId);
+            }
+        }
+
+        emit CardRevoked(cardId, msg.sender);
+    }
+
+    // View functions
+    function getCard(bytes32 cardId) public view returns (Card memory) {
+        return cards[cardId];
+    }
+
+    function getAccessLink(bytes32 linkId) public view returns (AccessLink memory) {
+        return accessLinks[linkId];
+    }
+
+    function getCardRevealLevels(bytes32 cardId) public view returns (RevealLevel[] memory) {
+        return cardRevealLevels[cardId];
+    }
+
+    function getOwnerCards(address owner) public view returns (bytes32[] memory) {
+        return ownerCards[owner];
+    }
+
+    function getCardLinks(bytes32 cardId) public view returns (bytes32[] memory) {
+        return cardLinks[cardId];
+    }
+
+    // Check if card requires abuse bond
+    function requiresBond(bytes32 cardId) public view returns (bool, coin) {
+        Card storage card = cards[cardId];
+        return (card.policy.requiresBond, card.policy.bondAmount);
+    }
+}
