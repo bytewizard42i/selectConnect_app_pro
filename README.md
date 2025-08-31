@@ -2,7 +2,14 @@
 
 **Dear Judges,**
 
-Imagine a world where women can network safely at conferences, where professionals can share contact information without fear of spam, and where privacy meets accountability. **NoirCard** makes this vision reality through revolutionary blockchain technology that protects users while enabling meaningful connections.
+Imagine a world where women can safely network with others, connecting both professionally and socially at conferences, meetings,and other IRL gatherings.
+
+Professionals can share contact information freely without the fear of spam, or harassment.
+
+NoirCard is where privacy meets with accountability. 
+
+**NoirCard** makes this vision reality through the revolutionary blockchain technology of Midnight https://docs.midnight.network
+that protects users while enabling meaningful connections.
 
 ## 🚨 The Problem We Solve
 
