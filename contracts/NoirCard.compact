@@ -1,6 +1,9 @@
 // Compact v0.16.0 - Privacy-preserving NoirCard contract
 // Compatible with Midnight blockchain
-compact 0.16.0;
+#pragma version "0.16.0"
+
+import Std.Ledger
+import Std.Crypto
 
 /**
  * NoirCard - Privacy-first business card system with progressive reveal

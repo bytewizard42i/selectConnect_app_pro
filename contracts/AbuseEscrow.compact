@@ -1,6 +1,9 @@
 // Compact v0.16.0 - Abuse bond escrow contract
 // Compatible with Midnight blockchain
-compact 0.16.0;
+#pragma version "0.16.0"
+
+import Std.Ledger
+import Std.Crypto
 
 circuit AbuseEscrow {
     // State variables for contract storage
