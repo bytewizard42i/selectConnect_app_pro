@@ -133,8 +133,8 @@ senderNull = PRF(secretKey, cardId)
 ### Getting Started
 
 ```bash
-# Clone and setup
-git clone https://github.com/bytewizard42i/NoirCard_me.git
+# Download and setup
+unzip NoirCard_Current_20250830_221006.zip
 cd NoirCard_me && npm install
 
 # Configure environment
