@@ -1,4 +1,4 @@
-# 🃏 NoirCard: The Future of Safe Digital Networking
+# 🃏 NoirCard: The Future of Safe Networking and Contact Connections
 
 **Dear Judges,**
 
