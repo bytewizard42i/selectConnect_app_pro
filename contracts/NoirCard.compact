@@ -1,349 +1,155 @@
-// Compact v0.16.0 - Privacy-preserving NoirCard contract
-// Compatible with Midnight blockchain
-#pragma version "0.16.0"
+// SPDX-License-Identifier: Apache-2.0
 
-import Std.Ledger
-import Std.Crypto
+pragma language_version 0.16;
 
-/**
- * NoirCard - Privacy-first business card system with progressive reveal
- * 
- * This contract enables users to create digital business cards that can be shared
- * via QR codes with privacy-preserving features including:
- * - Progressive contact information disclosure
- * - Revocable access links with time-based expiration
- * - Abuse protection through economic bonds
- * - Pseudonymous tracking for safety without compromising privacy
- */
-circuit NoirCard {
-    // State variables for contract storage
-    state cards: Map<Bytes32, Card>;
-    state cardRevealLevels: Map<Bytes32, Array<RevealLevel>>;
-    state accessLinks: Map<Bytes32, AccessLink>;
-    state ownerCards: Map<Address, Array<Bytes32>>;
-    state cardLinks: Map<Bytes32, Array<Bytes32>>;
-    
-    /**
-     * Core structure representing a NoirCard business card
-     * Each card contains encrypted contact data that can be progressively revealed
-     */
-    struct Card {
-        cardId: Bytes32,           // Unique identifier for this business card
-        owner: Address,            // Owner's address
-        alias: String,             // Public display name (e.g., "John Doe - Tech Conference")
-        contactDataHash: Bytes32,  // Cryptographic hash of encrypted contact information
-        active: Bool,              // Whether the card is currently active and accessible
-        createdAt: U64,            // Unix timestamp when card was created
-        expiresAt: U64,            // Unix timestamp when card expires (0 = never expires)
-        policy: CardPolicy,        // Configuration for how this card can be accessed
-    }
+import CompactStandardLibrary;
 
-    /**
-     * Policy configuration that controls how a NoirCard can be accessed
-     * These settings determine security, privacy, and interaction rules
-     */
-    struct CardPolicy {
-        requiresBond: Bool,        // True if senders must post economic bond to contact owner
-        bondAmount: U64,           // Amount of ADA required as anti-spam bond (in lovelace)
-        revealDelay: U64,          // Minimum seconds between progressive reveal levels
-        linkTTL: U64,              // How long access links remain valid (seconds)
-        allowRevocation: Bool,     // Whether owner can instantly revoke access links
-        maxReveals: U8,            // Maximum reveal levels (typically 1-5)
-        venueRestriction: Bytes32, // Optional: restrict usage to specific venue/event
-    }
+// Domain constants (for hashing/commitments)
+const DOMAIN_CARD  : Bytes<32> = pad(32, "nc:card");
+const DOMAIN_LINK  : Bytes<32> = pad(32, "nc:link");
+const DOMAIN_LEVEL : Bytes<32> = pad(32, "nc:level");
 
-    /**
-     * Defines a single level in the progressive contact reveal system
-     * Each level contains increasingly sensitive information
-     * Example progression: Level 1 (name) → Level 2 (email) → Level 3 (phone)
-     */
-    struct RevealLevel {
-        level: U8,                 // Sequential reveal level (1=basic, 2=contact, 3=detailed, etc.)
-        dataType: String,          // Type of data: "name", "email", "phone", "social", "full"
-        encryptedData: Bytes32,    // Encrypted contact information for this specific level
-        requiresApproval: Bool,    // True if owner must manually approve access to this level
-    }
+// Public types
+export enum CardState { INACTIVE, ACTIVE }
 
-    /**
-     * Represents a time-limited, revocable access link to a NoirCard
-     * These links are embedded in QR codes and can be shared at events
-     * Each link tracks usage and can be instantly revoked for safety
-     */
-    struct AccessLink {
-        linkId: Bytes32,           // Cryptographically unique identifier for this access link
-        cardId: Bytes32,           // Which NoirCard this link provides access to
-        accessor: Address,         // Address of person who accessed (zero if anonymous)
-        accessorCommit: Bytes32,   // Privacy-preserving commitment identifying the accessor
-        createdAt: U64,            // Unix timestamp when link was generated
-        expiresAt: U64,            // Unix timestamp when link expires and becomes invalid
-        lastAccessed: U64,         // Unix timestamp of most recent access attempt
-        revoked: Bool,             // True if owner has revoked this link (instant cutoff)
-        currentLevel: U8,          // Highest reveal level this link has accessed so far
-    }
+// Public on-chain state (minimal public metadata)
+export ledger round: Counter;                                          // epoch counter
+export ledger cards: Set<Bytes<32>>;                                   // cardId
+export ledger card_state: Set<(Bytes<32>, CardState)>;                 // (cardId, state)
+export ledger card_owner: Set<(Bytes<32>, Bytes<32>)>;                 // (cardId, ownerId)
+export ledger card_policy: Set<(Bytes<32>, Bool, Uint<64>, Uint<64>)>; // (cardId, requiresBond, bondAmount, revealDelay)
+export ledger contact_commit: Set<(Bytes<32>, Bytes<32>)>;             // (cardId, contactCommitment)
+export ledger reveal_tree: MerkleTree;                                 // commitments of reveal levels
+export ledger links: Set<Bytes<32>>;                                   // linkId
+export ledger link_meta: Set<(Bytes<32>, Bytes<32>, Uint<64>, Uint<64>, Bool, Uint<8>)>; // (linkId, cardId, createdAt, expiresAt, revoked, currentLevel)
 
-    /**
-     * CONTRACT STORAGE
-     * These mappings store all the contract's persistent data on the blockchain
-     */
-    
+// Initialize epoch on deploy
+constructor() {
+  round.increment(1);
+}
 
-    /**
-     * CIRCUIT EVENTS
-     * These events are emitted to create an immutable audit trail
-     * External applications can listen to these events for real-time updates
-     */
-    
-    // Card lifecycle events
-    event CardCreated { cardId: Bytes32, owner: Address, alias: String }
-    event CardUpdated { cardId: Bytes32, newContactDataHash: Bytes32 }
-    event CardRevoked { cardId: Bytes32, owner: Address }
-    
-    // Access link events
-    event LinkGenerated { linkId: Bytes32, cardId: Bytes32, expiresAt: U64 }
-    event LinkAccessed { linkId: Bytes32, cardId: Bytes32, revealLevel: U8 }
-    event LinkRevoked { linkId: Bytes32, cardId: Bytes32 }
-    
-    // Privacy events
-    event ContactRevealed { cardId: Bytes32, linkId: Bytes32, level: U8 }
+// Private inputs (provided by caller/DApp)
+witness ownerSecret(): Bytes<32>;
+witness accessorSecret(): Bytes<32>;
+witness rand(): Bytes<32>;
 
-    /**
-     * CREATE A NEW NOIRCARD
-     * 
-     * This function allows users to create a new privacy-preserving business card
-     * The card will be assigned a unique ID and stored on the blockchain
-     */
-    @public
-    fn createCard(
-        alias: String,
-        contactDataHash: Bytes32,
-        policy: CardPolicy,
-        revealLevels: Array<RevealLevel>
-    ) -> Bytes32 {
-        // Generate cryptographically unique card ID using sender address, alias, and timestamp
-        let cardId = hash(context.sender, alias, context.block_time);
-        
-        assert(!cards.contains_key(cardId), "Card already exists");
-        assert(alias.len() > 0, "Alias required");
-        assert(revealLevels.len() > 0, "At least one reveal level required");
+// Helper: derive ownerId from epoch-bound secret (rotate with round)
+circuit ownerId(round: Field, sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([ DOMAIN_CARD, (round as Bytes<32>), sk ]);
+}
 
-        // Create card
-        let card = Card {
-            cardId: cardId,
-            owner: context.sender,
-            alias: alias,
-            contactDataHash: contactDataHash,
-            active: true,
-            createdAt: context.block_time,
-            expiresAt: if policy.linkTTL > 0 { context.block_time + policy.linkTTL } else { 0 },
-            policy: policy,
-        };
-        
-        cards.insert(cardId, card);
-        cardRevealLevels.insert(cardId, revealLevels);
-        
-        // Add to owner's cards
-        let mut owner_cards = ownerCards.get(context.sender).unwrap_or_default();
-        owner_cards.push(cardId);
-        ownerCards.insert(context.sender, owner_cards);
+// Helper: cardId = H(DOMAIN_CARD, ownerId, aliasHash)
+circuit makeCardId(oid: Bytes<32>, aliasHash: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([ DOMAIN_CARD, oid, aliasHash ]);
+}
 
-        emit CardCreated { cardId, owner: context.sender, alias };
-        cardId
-    }
+// Helper: linkId = H(DOMAIN_LINK, cardId, accessorId, createdAt)
+circuit makeLinkId(cardId: Bytes<32>, accessorId: Bytes<32>, createdAt: Uint<64>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([
+    DOMAIN_LINK, cardId, toBytes32(createdAt)
+  ]) ^ accessorId;
+}
 
-    // Generate access link for QR code
-    @public
-    fn generateAccessLink(
-        cardId: Bytes32,
-        customTTL: U64,
-        accessorCommit: Bytes32
-    ) -> Bytes32 {
-        let card = cards.get(cardId).expect("Card not found");
-        assert!(card.active, "Card not active");
-        assert!(card.owner == context.sender, "Not card owner");
-        
-        // Check card hasn't expired
-        if card.expiresAt > 0 {
-            assert!(context.block_time < card.expiresAt, "Card expired");
-        }
+// Helper: accessorId from epoch and accessor secret
+circuit accessorId(round: Field, sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([ DOMAIN_LINK, (round as Bytes<32>), sk ]);
+}
 
-        // Generate unique link ID
-        let linkId = hash(cardId, accessorCommit, context.block_time);
-        
-        // Determine expiration
-        let linkExpiry = if customTTL > 0 {
-            context.block_time + customTTL
-        } else {
-            context.block_time + card.policy.linkTTL
-        };
+// Public: create a card (stores only commitments on-chain)
+export circuit createCard(
+  aliasHash: Bytes<32>,
+  requiresBond: Bool,
+  bondAmount: Uint<64>,
+  revealDelay: Uint<64>,
+  contactCiphertext: Bytes<32>
+): Bytes<32> {
+  const sk = ownerSecret();
+  const oid = ownerId(round, sk);
+  const cardId = makeCardId(oid, aliasHash);
 
-        // Create access link
-        let link = AccessLink {
-            linkId: linkId,
-            cardId: cardId,
-            accessor: Address::zero(), // Anonymous initially
-            accessorCommit: accessorCommit,
-            createdAt: context.block_time,
-            expiresAt: linkExpiry,
-            lastAccessed: 0,
-            revoked: false,
-            currentLevel: 0,
-        };
-        
-        accessLinks.insert(linkId, link);
+  assert(!contains(cards, cardId), "card exists");
 
-        // Track link for card
-        let mut card_links = cardLinks.get(cardId).unwrap_or_default();
-        card_links.push(linkId);
-        cardLinks.insert(cardId, card_links);
+  insert(cards, cardId);
+  insert(card_owner, (cardId, oid));
+  insert(card_state, (cardId, CardState.ACTIVE));
+  insert(card_policy, (cardId, requiresBond, bondAmount, revealDelay));
 
-        emit LinkGenerated { linkId, cardId, expiresAt: linkExpiry };
-        linkId
-    }
+  // Commit contact data
+  const r = rand();
+  const contactCommitment = persistentCommit<Vector<2, Bytes<32>>>([ contactCiphertext, r ]);
+  insert(contact_commit, (cardId, contactCommitment));
 
-    // Access card via link (progressive reveal)
-    @public
-    fn accessCard(
-        linkId: Bytes32,
-        requestedLevel: U8,
-        accessorCommit: Bytes32
-    ) -> Bytes32 {
-        let mut link = accessLinks.get(linkId).expect("Link not found");
-        let card = cards.get(link.cardId).expect("Card not found");
-        
-        assert!(!link.revoked, "Link revoked");
-        assert!(context.block_time < link.expiresAt, "Link expired");
-        assert!(card.active, "Card not active");
-        assert!(link.accessorCommit == accessorCommit, "Invalid accessor");
+  return cardId;
+}
 
-        // Check if requested level is available
-        let reveal_levels = cardRevealLevels.get(link.cardId).expect("No reveal levels");
-        assert!(requestedLevel > 0 && requestedLevel <= reveal_levels.len() as U8, "Invalid reveal level");
-        
-        // Progressive reveal: can only access next level
-        assert!(requestedLevel <= link.currentLevel + 1, "Must progress sequentially");
+// Public: add a reveal level commitment (progressive disclosure)
+export circuit addRevealLevel(cardId: Bytes<32>, levelCiphertext: Bytes<32>): [] {
+  assert(contains(cards, cardId), "missing card");
+  assert(contains(card_state, (cardId, CardState.ACTIVE)), "inactive");
 
-        // Check reveal delay for progressive disclosure
-        if link.currentLevel > 0 && card.policy.revealDelay > 0 {
-            assert!(
-                context.block_time >= link.lastAccessed + card.policy.revealDelay,
-                "Reveal delay not met"
-            );
-        }
+  const lr = rand();
+  const levelCommit = persistentCommit<Vector<3, Bytes<32>>>([ DOMAIN_LEVEL, levelCiphertext, lr ]);
+  treeInsert(reveal_tree, levelCommit);
+}
 
-        // Get reveal level data
-        let reveal_level = &reveal_levels[(requestedLevel - 1) as usize];
-        
-        // Check if owner approval is required for this level
-        if reveal_level.requiresApproval && requestedLevel > link.currentLevel {
-            // In a real implementation, this would trigger an approval workflow
-            // For now, we'll assume approval is granted
-        }
+// Public: generate a link (stores meta, no PII)
+export circuit generateLink(cardId: Bytes<32>, createdAt: Uint<64>, ttl: Uint<64>): Bytes<32> {
+  assert(contains(cards, cardId), "missing card");
+  assert(contains(card_state, (cardId, CardState.ACTIVE)), "inactive");
 
-        // Update link state
-        link.currentLevel = requestedLevel;
-        link.lastAccessed = context.block_time;
-        if link.accessor == Address::zero() {
-            link.accessor = context.sender;
-        }
-        
-        accessLinks.insert(linkId, link);
+  const ask = accessorSecret();
+  const aid = accessorId(round, ask);
 
-        emit LinkAccessed { linkId, cardId: link.cardId, revealLevel: requestedLevel };
-        emit ContactRevealed { cardId: link.cardId, linkId, level: requestedLevel };
+  const linkId = makeLinkId(cardId, aid, createdAt);
+  const expiresAt = createdAt + ttl;
 
-        reveal_level.encryptedData
-    }
+  insert(links, linkId);
+  insert(link_meta, (linkId, cardId, createdAt, expiresAt, false, 0u8));
 
-    // Revoke access link
-    @public
-    fn revokeLink(linkId: Bytes32) {
-        let mut link = accessLinks.get(linkId).expect("Link not found");
-        let card = cards.get(link.cardId).expect("Card not found");
-        
-        assert!(card.owner == context.sender, "Not authorized");
-        assert!(card.policy.allowRevocation, "Revocation not allowed");
-        assert!(!link.revoked, "Already revoked");
+  return linkId;
+}
 
-        link.revoked = true;
-        accessLinks.insert(linkId, link);
-        
-        emit LinkRevoked { linkId, cardId: link.cardId };
-    }
+// Public: access next level by proving membership of the level commit
+export circuit accessNextLevel(
+  linkId: Bytes<32>,
+  nowTs: Uint<64>,
+  levelCiphertext: Bytes<32>
+): Bytes<32> {
+  let (lId, cId, createdAt, expiresAt, revoked, currentLevel) = get(link_meta, linkId);
+  assert(lId == linkId, "bad link");
+  assert(!revoked, "revoked");
+  assert(nowTs < expiresAt, "expired");
 
-    // Update card contact data
-    @public
-    fn updateCard(
-        cardId: Bytes32,
-        newContactDataHash: Bytes32,
-        newRevealLevels: Array<RevealLevel>
-    ) {
-        let mut card = cards.get(cardId).expect("Card not found");
-        assert!(card.owner == context.sender, "Not card owner");
-        assert!(card.active, "Card not active");
+  const lr = rand();
+  const levelCommit = persistentCommit<Vector<3, Bytes<32>>>([ DOMAIN_LEVEL, levelCiphertext, lr ]);
+  assert(treeContains(reveal_tree, levelCommit), "unknown level");
 
-        card.contactDataHash = newContactDataHash;
-        cards.insert(cardId, card);
-        
-        // Update reveal levels
-        cardRevealLevels.insert(cardId, newRevealLevels);
+  const nextLevel = currentLevel + 1u8;
+  remove(link_meta, linkId);
+  insert(link_meta, (linkId, cId, createdAt, expiresAt, revoked, nextLevel));
 
-        emit CardUpdated { cardId, newContactDataHash };
-    }
+  return levelCiphertext;
+}
 
-    // Deactivate card
-    @public
-    fn revokeCard(cardId: Bytes32) {
-        let mut card = cards.get(cardId).expect("Card not found");
-        assert!(card.owner == context.sender, "Not card owner");
-        assert!(card.active, "Card already inactive");
+// Public: revoke a link (owner-only)
+export circuit revokeLink(cardId: Bytes<32>, linkId: Bytes<32>): [] {
+  const sk = ownerSecret();
+  const oid = ownerId(round, sk);
+  assert(contains(card_owner, (cardId, oid)), "not owner");
 
-        card.active = false;
-        cards.insert(cardId, card);
-        
-        // Revoke all active links
-        let links = cardLinks.get(cardId).unwrap_or_default();
-        for linkId in links {
-            let mut link = accessLinks.get(linkId).expect("Link not found");
-            if !link.revoked {
-                link.revoked = true;
-                accessLinks.insert(linkId, link);
-                emit LinkRevoked { linkId, cardId };
-            }
-        }
+  let (lId, cId, createdAt, expiresAt, _revoked, currentLevel) = get(link_meta, linkId);
+  assert(lId == linkId && cId == cardId, "mismatch");
 
-        emit CardRevoked { cardId, owner: context.sender };
-    }
+  remove(link_meta, linkId);
+  insert(link_meta, (linkId, cId, createdAt, expiresAt, true, currentLevel));
+}
 
-    // View functions
-    @public
-    fn getCard(cardId: Bytes32) -> Card {
-        cards.get(cardId).expect("Card not found")
-    }
+// Public: deactivate card (owner-only)
+export circuit deactivateCard(cardId: Bytes<32>): [] {
+  const sk = ownerSecret();
+  const oid = ownerId(round, sk);
+  assert(contains(card_owner, (cardId, oid)), "not owner");
 
-    @public
-    fn getAccessLink(linkId: Bytes32) -> AccessLink {
-        accessLinks.get(linkId).expect("Link not found")
-    }
-
-    @public
-    fn getCardRevealLevels(cardId: Bytes32) -> Array<RevealLevel> {
-        cardRevealLevels.get(cardId).expect("No reveal levels found")
-    }
-
-    @public
-    fn getOwnerCards(owner: Address) -> Array<Bytes32> {
-        ownerCards.get(owner).unwrap_or_default()
-    }
-
-    @public
-    fn getCardLinks(cardId: Bytes32) -> Array<Bytes32> {
-        cardLinks.get(cardId).unwrap_or_default()
-    }
-
-    // Check if card requires abuse bond
-    @public
-    fn requiresBond(cardId: Bytes32) -> (Bool, U64) {
-        let card = cards.get(cardId).expect("Card not found");
-        (card.policy.requiresBond, card.policy.bondAmount)
-    }
+  remove(card_state, (cardId, CardState.ACTIVE));
+  insert(card_state, (cardId, CardState.INACTIVE));
 }

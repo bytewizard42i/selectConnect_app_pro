@@ -1,251 +1,125 @@
-// Compact v0.16.0 - Abuse bond escrow contract
-// Compatible with Midnight blockchain
-#pragma version "0.16.0"
+// SPDX-License-Identifier: Apache-2.0
 
-import Std.Ledger
-import Std.Crypto
+pragma language_version 0.16;
 
-circuit AbuseEscrow {
-    // State variables for contract storage
-    state bonds: Map<Bytes32, Bond>;
-    state cardConfigs: Map<Bytes32, BondConfig>;
-    state reputation: Map<Bytes32, SenderReputation>;
-    state safetyPool: Map<Bytes32, U64>;
-    // Bond structure with all required fields
-    struct Bond {
-        amount: U64,           // Bond amount in lovelace
-        senderCommit: Bytes32, // H(senderDID || salt) - stable per card
-        cardId: Bytes32,       // NoirCard identifier
-        expiresAt: U64,        // TTL timestamp
-        refunded: Bool,        // Refund status
-        slashed: Bool,         // Slash status
-        sender: Address,       // Original sender for refunds
-        postedAt: U64,         // Timestamp when bond was posted
-    }
+import CompactStandardLibrary;
 
-    // Dynamic bond configuration per card
-    struct BondConfig {
-        minBondAmount: U64,    // Minimum required bond
-        defaultTTL: U64,       // Default expiry time
-        dynamicPricing: Bool,  // Enable context-based pricing
-        riskMultiplier: U64,   // Risk-based multiplier (basis points)
-    }
+// Public on-chain state
+export ledger round: Counter; // epoch counter for rotating auth if desired
+export ledger bonds: Set<Bytes<32>>;                                         // bondId
+export ledger bond_meta: Set<(Bytes<32>, Bytes<32>, Bytes<32>, Uint<64>, Uint<64>, Bool, Bool)>; // (bondId, cardId, senderCommit, amount, expiresAt, refunded, slashed)
+export ledger safety_pool: Set<(Bytes<32>, Uint<64>)>;                        // (cardId, balance)
+export ledger sender_rep: Set<(Bytes<32>, Uint<32>, Uint<32>, Uint<64>, Uint<64>)>; // (senderCommit, totalBonds, slashedCount, lastSlashTime, totalSlashed)
+export ledger bond_config: Set<(Bytes<32>, Uint<64>, Uint<64>, Bool, Uint<64>)>;     // (cardId, minBondAmount, defaultTTL, dynamicPricing, riskMultiplier)
+export ledger card_owner: Set<(Bytes<32>, Bytes<32>)>;                         // (cardId, ownerId)
 
-    // Reputation tracking per sender commitment
-    struct SenderReputation {
-        totalBonds: U32,       // Total bonds posted
-        slashedCount: U32,     // Number of slashed bonds
-        lastSlashTime: U64,    // Last time sender was slashed
-        totalSlashed: U64,     // Total amount slashed
-    }
+// Constructor initializes epoch
+constructor() {
+  round.increment(1);
+}
 
+// Witness inputs
+witness ownerSecret(): Bytes<32>;
+witness rand(): Bytes<32>;
 
-    // Events
-    event BondPosted { bondId: Bytes32, cardId: Bytes32, senderCommit: Bytes32, amount: U64, expiresAt: U64 }
-    event BondRefunded { bondId: Bytes32, cardId: Bytes32, senderCommit: Bytes32, amount: U64 }
-    event BondSlashed { bondId: Bytes32, cardId: Bytes32, senderCommit: Bytes32, amount: U64, evidenceHash: Bytes32 }
-    event AbuseAttested { cardId: Bytes32, senderNull: Bytes32, evidenceHash: Bytes32, timestamp: U64 }
-    event SafetyPoolUpdated { cardId: Bytes32, newBalance: U64 }
+// Helper: derive ownerId from epoch-bound secret
+circuit ownerId(round: Field, sk: Bytes<32}): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([ (round as Bytes<32>), sk ]);
+}
 
-    // Post a bond to contact a NoirCard
-    @public
-    fn postBond(
-        cardId: Bytes32,
-        senderCommit: Bytes32,
-        amount: U64,
-        ttl: U64
-    ) -> Bytes32 {
-        // Generate unique bond ID
-        let bondId = hash(cardId, senderCommit, context.block_time, context.sender);
-        
-        // Get bond configuration for this card
-        let config = cardConfigs.get(cardId).unwrap_or_default();
-        
-        // Calculate required bond amount (with dynamic pricing if enabled)
-        let requiredAmount = calculateBondAmount(cardId, senderCommit, &config);
-        assert!(amount >= requiredAmount, "Insufficient bond amount");
-        
-        // Check sender doesn't have active bond for this card
-        assert!(!hasActiveBond(cardId, senderCommit), "Active bond already exists");
-        
-        // Create bond
-        let bond = Bond {
-            amount: amount,
-            senderCommit: senderCommit,
-            cardId: cardId,
-            expiresAt: context.block_time + if ttl > 0 { ttl } else { config.defaultTTL },
-            refunded: false,
-            slashed: false,
-            sender: context.sender,
-            postedAt: context.block_time,
-        };
-        
-        bonds.insert(bondId, bond);
+// Helper: calculate dynamic required bond amount
+circuit calcRequired(minBond: Uint<64>, dynPricing: Bool, riskMult: Uint<64>, senderCommit: Bytes<32>): Uint<64> {
+  if (!dynPricing) { return minBond }
+  let (sc, total, slashedCount, _lastSlash, _totalSlashed) = getOrDefault(sender_rep, senderCommit, (senderCommit, 0u32, 0u32, 0u64, 0u64));
+  if (slashedCount == 0u32) { return minBond }
+  let multiplierBp = 10000u64 + (toUint64(slashedCount) * riskMult);
+  return (minBond * multiplierBp) / 10000u64;
+}
 
-        // Update sender reputation
-        let mut rep = reputation.get(senderCommit).unwrap_or_default();
-        rep.totalBonds += 1;
-        reputation.insert(senderCommit, rep);
+// Post a bond to contact a NoirCard
+export circuit postBond(
+  cardId: Bytes<32>,
+  senderCommit: Bytes<32>,
+  amount: Uint<64>,
+  nowTs: Uint<64>,
+  ttl: Uint<64>
+): Bytes<32> {
+  let (cfgCard, minBond, defTTL, dynPricing, riskMult) = getOrDefault(bond_config, cardId, (cardId, 0u64, 0u64, false, 0u64));
+  let requiredAmount = calcRequired(minBond, dynPricing, riskMult, senderCommit);
+  assert(amount >= requiredAmount, "insufficient amount");
 
-        emit BondPosted { bondId, cardId, senderCommit, amount, expiresAt: bond.expiresAt };
-        bondId
-    }
+  let expiry = nowTs + (if ttl > 0u64 { ttl } else { defTTL });
+  let bondId = persistentHash<Vector<3, Bytes<32>>>([ cardId, senderCommit, toBytes32(nowTs) ]);
 
-    // Refund bond (called by recipient engagement or TTL expiry)
-    @public
-    fn refundBond(bondId: Bytes32) {
-        let mut bond = bonds.get(bondId).expect("Bond does not exist");
-        assert!(!bond.refunded && !bond.slashed, "Bond already processed");
-        
-        // Check if TTL expired or if called by authorized party
-        assert!(
-            context.block_time >= bond.expiresAt || 
-            isAuthorizedRefunder(bondId, context.sender),
-            "Not authorized or not expired"
-        );
+  insert(bonds, bondId);
+  insert(bond_meta, (bondId, cardId, senderCommit, amount, expiry, false, false));
 
-        bond.refunded = true;
-        bonds.insert(bondId, bond);
-        
-        // Transfer bond back to sender (implementation would handle actual transfer)
-        // transfer(bond.sender, bond.amount);
-        
-        emit BondRefunded { bondId, cardId: bond.cardId, senderCommit: bond.senderCommit, amount: bond.amount };
-    }
+  // Update sender reputation
+  let (sc, total, slashedCount, lastSlash, totalSlashed) = getOrDefault(sender_rep, senderCommit, (senderCommit, 0u32, 0u32, 0u64, 0u64));
+  remove(sender_rep, senderCommit);
+  insert(sender_rep, (senderCommit, total + 1u32, slashedCount, lastSlash, totalSlashed));
 
-    // Slash bond on abuse attestation
-    @public
-    fn slashBond(
-        bondId: Bytes32, 
-        evidenceHash: Bytes32,
-        senderNull: Bytes32
-    ) {
-        let mut bond = bonds.get(bondId).expect("Bond does not exist");
-        assert!(!bond.refunded && !bond.slashed, "Bond already processed");
-        assert!(isAuthorizedSlasher(bond.cardId, context.sender), "Not authorized to slash");
+  return bondId;
+}
 
-        bond.slashed = true;
-        bonds.insert(bondId, bond);
+// Refund bond (called by recipient engagement or TTL expiry)
+export circuit refundBond(
+  bondId: Bytes<32>,
+  nowTs: Uint<64>,
+  authorizerIsOwner: Bool
+): [] {
+  let (bId, cId, sCommit, amount, expiresAt, refunded, slashed) = get(bond_meta, bondId);
+  assert(bId == bondId, "not found");
+  assert(!refunded && !slashed, "already processed");
+  assert(nowTs >= expiresAt || authorizerIsOwner, "not authorized or not expired");
 
-        // Update sender reputation
-        let mut rep = reputation.get(bond.senderCommit).unwrap_or_default();
-        rep.slashedCount += 1;
-        rep.lastSlashTime = context.block_time;
-        rep.totalSlashed += bond.amount;
-        reputation.insert(bond.senderCommit, rep);
+  remove(bond_meta, bondId);
+  insert(bond_meta, (bondId, cId, sCommit, amount, expiresAt, true, slashed));
+}
 
-        // Split slashed amount: 50% to safety pool, 50% burned
-        let safetyAmount = bond.amount / 2;
-        let _burnAmount = bond.amount - safetyAmount;
+// Slash bond on abuse attestation (owner-only)
+export circuit slashBond(
+  bondId: Bytes<32>,
+  cardId: Bytes<32>,
+  nowTs: Uint<64>
+): [] {
+  const sk = ownerSecret();
+  const oid = ownerId(round, sk);
+  assert(contains(card_owner, (cardId, oid)), "not owner");
 
-        // Add to safety pool
-        let currentPool = safetyPool.get(bond.cardId).unwrap_or(0);
-        safetyPool.insert(bond.cardId, currentPool + safetyAmount);
-        
-        // Burn remaining amount (implementation would handle actual burning)
-        // burn(burnAmount);
+  let (bId, cId, sCommit, amount, expiresAt, refunded, slashed) = get(bond_meta, bondId);
+  assert(bId == bondId && cId == cardId, "bond/card mismatch");
+  assert(!refunded && !slashed, "already processed");
 
-        emit BondSlashed { bondId, cardId: bond.cardId, senderCommit: bond.senderCommit, amount: bond.amount, evidenceHash };
-        emit AbuseAttested { cardId: bond.cardId, senderNull, evidenceHash, timestamp: context.block_time };
-        emit SafetyPoolUpdated { cardId: bond.cardId, newBalance: currentPool + safetyAmount };
-    }
+  remove(bond_meta, bondId);
+  insert(bond_meta, (bondId, cId, sCommit, amount, expiresAt, refunded, true));
 
-    // Configure bond parameters for a card
-    @public
-    fn configureBond(
-        cardId: Bytes32,
-        minBondAmount: U64,
-        defaultTTL: U64,
-        dynamicPricing: Bool,
-        riskMultiplier: U64
-    ) {
-        assert!(isCardOwner(cardId, context.sender), "Not card owner");
-        
-        let config = BondConfig {
-            minBondAmount: minBondAmount,
-            defaultTTL: defaultTTL,
-            dynamicPricing: dynamicPricing,
-            riskMultiplier: riskMultiplier,
-        };
-        
-        cardConfigs.insert(cardId, config);
-    }
+  // Update sender reputation
+  let (sc, total, scount, lastSlash, totalSlashed) = getOrDefault(sender_rep, sCommit, (sCommit, 0u32, 0u32, 0u64, 0u64));
+  remove(sender_rep, sCommit);
+  insert(sender_rep, (sCommit, total, scount + 1u32, nowTs, totalSlashed + amount));
 
-    // Calculate required bond amount with dynamic pricing
-    fn calculateBondAmount(
-        cardId: Bytes32, 
-        senderCommit: Bytes32, 
-        config: &BondConfig
-    ) -> U64 {
-        let mut baseAmount = config.minBondAmount;
-        
-        if !config.dynamicPricing {
-            return baseAmount;
-        }
+  // Safety pool receives half
+  let half = amount / 2u64;
+  let (poolCard, bal) = getOrDefault(safety_pool, cardId, (cardId, 0u64));
+  remove(safety_pool, cardId);
+  insert(safety_pool, (cardId, bal + half));
+}
 
-        // Apply reputation-based multiplier
-        let rep = reputation.get(senderCommit).unwrap_or_default();
-        if rep.slashedCount > 0 {
-            // Increase bond for repeat offenders
-            let multiplier = 1000 + (rep.slashedCount as U64 * config.riskMultiplier);
-            baseAmount = (baseAmount * multiplier) / 1000;
-        }
+// Configure bond parameters for a card (owner-only)
+export circuit configureBond(
+  cardId: Bytes<32>,
+  minBondAmount: Uint<64>,
+  defaultTTL: Uint<64>,
+  dynamicPricing: Bool,
+  riskMultiplier: Uint<64>
+): [] {
+  const sk = ownerSecret();
+  const oid = ownerId(round, sk);
+  assert(contains(card_owner, (cardId, oid)), "not owner");
 
-        baseAmount
-    }
-
-    // Check if sender has active bond for card
-    fn hasActiveBond(cardId: Bytes32, senderCommit: Bytes32) -> Bool {
-        // Implementation would check for existing active bonds
-        // This is a simplified version
-        false
-    }
-
-    // Authorization checks
-    fn isAuthorizedRefunder(bondId: Bytes32, caller: Address) -> Bool {
-        let bond = bonds.get(bondId).expect("Bond not found");
-        // Card owner or relay service can authorize refunds
-        isCardOwner(bond.cardId, caller) || isRelayService(caller)
-    }
-
-    fn isAuthorizedSlasher(cardId: Bytes32, caller: Address) -> Bool {
-        // Card owner, guardians, or relay service can slash
-        isCardOwner(cardId, caller) || isGuardian(caller) || isRelayService(caller)
-    }
-
-    fn isCardOwner(cardId: Bytes32, caller: Address) -> Bool {
-        // Implementation would check card ownership
-        true // Simplified
-    }
-
-    fn isGuardian(caller: Address) -> Bool {
-        // Implementation would check guardian status
-        true // Simplified
-    }
-
-    fn isRelayService(caller: Address) -> Bool {
-        // Implementation would check authorized relay services
-        true // Simplified
-    }
-
-    // View functions
-    @public
-    fn getBond(bondId: Bytes32) -> Bond {
-        bonds.get(bondId).expect("Bond not found")
-    }
-
-    @public
-    fn getSenderReputation(senderCommit: Bytes32) -> SenderReputation {
-        reputation.get(senderCommit).unwrap_or_default()
-    }
-
-    @public
-    fn getSafetyPoolBalance(cardId: Bytes32) -> U64 {
-        safetyPool.get(cardId).unwrap_or(0)
-    }
-
-    @public
-    fn getBondConfig(cardId: Bytes32) -> BondConfig {
-        cardConfigs.get(cardId).unwrap_or_default()
-    }
+  if (contains(bond_config, cardId)) {
+    remove(bond_config, cardId);
+  }
+  insert(bond_config, (cardId, minBondAmount, defaultTTL, dynamicPricing, riskMultiplier));
 }
