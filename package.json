@@ -8,6 +8,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "relay": "node -r ts-node/register relay/RelayService.ts",
+    "relay:dev": "nodemon -r ts-node/register relay/RelayService.ts",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "test:relay": "npm run docker:up && sleep 10 && npm run relay:dev",
     "compile-contracts": "compact compile contracts/",
     "deploy-contracts": "compact deploy --network testnet",
     "test": "jest",
@@ -40,6 +46,8 @@
     "winston": "^3.11.0"
   },
   "devDependencies": {
+    "ts-node": "^10.9.0",
+    "nodemon": "^3.0.0",
     "@types/node": "^20.0.0",
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
