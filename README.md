@@ -1,8 +1,8 @@
-# 🃏 NoirCard: The Future of Safe Networking and Contact Connections
+# 🃏 NoirCard: The Future of Safe  Contact Connections and Networking
 
-**Dear Judges,**
+**Dear Midnight Judges,**
 
-Imagine a world where women can safely network with others, connecting both professionally and socially at conferences, meetings,and other IRL gatherings.
+Imagine a world where women (and men & squids) can safely network with others, exchange contact information and connecting both professionally and socially at conferences, meetings, and other IRL gatherings.
 
 Professionals can share contact information freely without the fear of spam, or harassment.
 
