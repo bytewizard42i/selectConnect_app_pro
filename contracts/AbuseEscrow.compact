@@ -4,7 +4,7 @@ pragma language_version 0.16;
 
 import CompactStandardLibrary;
 
-// ==============================================
+//==============================================
 // AbuseEscrow (NoirCard) — Compact v0.16 example
 // ----------------------------------------------
 // Purpose:
