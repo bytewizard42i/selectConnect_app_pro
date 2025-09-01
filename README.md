@@ -32,10 +32,14 @@ NoirCard combines **progressive contact revelation** with **economic abuse deter
 
 ### Core Components
 
-1. **NoirCard.compact** - Main smart contract for card creation and access management
-2. **AbuseEscrow.compact** - Abuse bond system for spam/harassment protection
-3. **RelayService.ts** - Off-chain relay for message forwarding and bond verification
-4. **NoirCardApp.tsx** - React frontend for card management and QR scanning
+1. **NoirCardProtocol.compact** - Unified smart contract combining:
+   - Privacy-preserving business cards with pseudonymous contact handles
+   - Rescindable credentials with selective disclosure
+   - Progressive reveal through Merkle tree levels
+   - Integrated abuse bond staking for spam/harassment protection
+   - Clear role separation: `card_admin` and `card_recipient`
+2. **RelayService.ts** - Off-chain relay for message forwarding and bond verification
+3. **NoirCardApp.tsx** - React frontend for card management and QR scanning
 
 ## 🌟 Judge Scenarios: Real-World Impact
 
@@ -201,35 +205,83 @@ npm run dev
 - **Bond Management**: Easy bond posting and status tracking
 - **Mobile Responsive**: Works seamlessly on all devices
 
-## 🔧 Smart Contract API
+## 🔧 Smart Contract API - Unified NoirCardProtocol
 
-### NoirCard Contract
+### Card Management (card_admin role)
 
 ```typescript
-// Create new business card
-function createCard(alias, contactDataHash, policy, revealLevels) -> cardId
+// Create new privacy-preserving business card
+circuit createCard(aliasHash, requiresBond, minBondAmount, defaultTTL, 
+                  phoneCommit, emailCommit) -> cardId
 
-// Generate access link for QR code
-function generateAccessLink(cardId, customTTL, accessorCommit) -> linkId
+// Update contact information with new commitment
+circuit updateContact(cardId) -> []
 
-// Access card with progressive reveal
-function accessCard(linkId, requestedLevel, accessorCommit) -> revealedData
+// Update pseudonymous handles
+circuit updatePseudonyms(cardId, newPhoneCommit, newEmailCommit) -> []
 
-// Revoke access link
-function revokeLink(linkId)
+// Manage card lifecycle
+circuit suspendCard(cardId) -> []
+circuit reactivateCard(cardId) -> []
+circuit revokeCard(cardId) -> []
+
+// Update card policy
+circuit updateCardPolicy(cardId, requiresBond, minBondAmount, 
+                        defaultTTL, maxSlashes) -> []
 ```
 
-### AbuseEscrow Contract
+### Credential Management (card_admin role)
 
 ```typescript
-// Post bond to contact someone
-function postBond(cardId, senderCommit, amount, ttl) -> bondId
+// Issue rescindable credentials
+circuit issueCredential(cardId) -> []
 
-// Refund bond after normal interaction
-function refundBond(bondId)
+// Rescind/revoke credentials with private reason
+circuit rescindCredential(cardId) -> []
+```
 
-// Slash bond for abuse
-function slashBond(bondId, evidenceHash, senderNull)
+### Progressive Reveal (card_admin & card_recipient roles)
+
+```typescript
+// Add reveal levels (admin)
+circuit addRevealLevel(cardId, levelData) -> []
+
+// Generate time-limited access link (recipient)
+circuit generateAccessLink(cardId, createdAt, ttl) -> linkId
+
+// Access next reveal level (recipient)
+circuit accessNextLevel(linkId, currentTime, levelData) -> revealedData
+
+// Revoke access link (admin)
+circuit revokeLink(cardId, linkId) -> []
+```
+
+### Abuse Bond Staking
+
+```typescript
+// Post bond to contact card holder
+circuit postBond(cardId, amount, ttl) -> bondId
+
+// Refund bond after successful interaction
+circuit refundBond(bondId) -> []
+
+// Slash bond for abuse (admin only)
+circuit slashBond(bondId) -> []
+```
+
+### Read-Only Queries
+
+```typescript
+// Check card and credential states
+circuit isCardActive(cardId) -> Bool
+circuit getCredentialState(cardId) -> CredentialState
+circuit getRevealLevel(cardId) -> Uint8
+
+// Get policy and bond information
+circuit getCardPolicy(cardId) -> (requiresBond, minBond, defaultTTL, maxSlashes)
+circuit getBondState(bondId) -> BondState
+circuit getSenderReputation(senderCommit) -> (totalBonds, slashedCount)
+circuit getSafetyPool(cardId) -> balance
 ```
 
 ## 🎯 Judge Evaluation Criteria

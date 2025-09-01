@@ -33,7 +33,7 @@ export ledger sender_rep: Set<(Bytes<32>, Uint<32>, Uint<32>, Uint<64>, Uint<64>
 // bond_config: per-card configuration for minimums/TTLs and dynamic pricing
 export ledger bond_config: Set<(Bytes<32>, Uint<64>, Uint<64>, Bool, Uint<64>)>;     // (cardId, minBondAmount, defaultTTL, dynamicPricing, riskMultiplier)
 // card_owner: pair linking a card to an owner identifier (Bytes<32>), used for authorization
-export ledger card_owner: Set<(Bytes<32>, Bytes<32>)>;                         // (cardId, ownerId)
+export ledger card_admin: Set<(Bytes<32>, Bytes<32>)>;                         // (cardId, adminId)
 
 // Constructor initializes epoch
 constructor() {
@@ -41,13 +41,16 @@ constructor() {
 }
 
 // Witness inputs
-witness ownerSecret(): Bytes<32>;
+witness adminSecret(): Bytes<32>;
 witness rand(): Bytes<32>;
 
-// Helper: derive ownerId from epoch-bound secret
-// The owner proves control via a secret; we derive a stable public identifier from it and the current epoch.
-circuit ownerId(round: Field, sk: Bytes<32>): Bytes<32> {
-  return persistentHash<Vector<2, Bytes<32>>>([ (round as Bytes<32>), sk ]);
+// Domain constants (align with NoirCard)
+const DOMAIN_CARD  : Bytes<32> = pad(32, "nc:card");
+
+// Helper: derive adminId from epoch-bound secret (aligned with NoirCard)
+// The admin proves control via a secret; we derive a stable public identifier from it and the current epoch.
+circuit adminId(round: Field, sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([ DOMAIN_CARD, (round as Bytes<32>), sk ]);
 }
 
 // Helper: calculate dynamic required bond amount
@@ -97,24 +100,24 @@ export circuit postBond(
 // Refund bond (called by recipient engagement or TTL expiry)
 // Policy:
 //  - Anyone can trigger a refund after expiry
-//  - Before expiry, must be an authorized party (modeled by authorizerIsOwner flag provided by caller's proof)
+//  - Before expiry, must be an authorized party (modeled by authorizerIsAdmin flag provided by caller's proof)
 export circuit refundBond(
   bondId: Bytes<32>,
   nowTs: Uint<64>,
-  authorizerIsOwner: Bool
+  authorizerIsAdmin: Bool
 ): [] {
   let (bId, cId, sCommit, amount, expiresAt, refunded, slashed) = get(bond_meta, bondId);
   assert(bId == bondId, "not found");
   assert(!refunded && !slashed, "already processed");
-  assert(nowTs >= expiresAt || authorizerIsOwner, "not authorized or not expired");
+  assert(nowTs >= expiresAt || authorizerIsAdmin, "not authorized or not expired");
 
   remove(bond_meta, bondId);
   insert(bond_meta, (bondId, cId, sCommit, amount, expiresAt, true, slashed));
 }
 
-// Slash bond on abuse attestation (owner-only)
+// Slash bond on abuse attestation (admin-only)
 // Authorization:
-//  - The owner of the card proves ownership via ownerSecret witness -> ownerId -> membership in card_owner
+//  - The admin of the card proves control via adminSecret witness -> adminId -> membership in card_admin
 // Effects:
 //  - Marks the bond slashed
 //  - Updates sender reputation (increments slashedCount, records lastSlashTime, accumulates totalSlashed)
@@ -124,9 +127,9 @@ export circuit slashBond(
   cardId: Bytes<32>,
   nowTs: Uint<64>
 ): [] {
-  const sk = ownerSecret();
-  const oid = ownerId(round, sk);
-  assert(contains(card_owner, (cardId, oid)), "not owner");
+  const sk = adminSecret();
+  const aid = adminId(round, sk);
+  assert(contains(card_admin, (cardId, aid)), "not admin");
 
   let (bId, cId, sCommit, amount, expiresAt, refunded, slashed) = get(bond_meta, bondId);
   assert(bId == bondId && cId == cardId, "bond/card mismatch");
@@ -147,7 +150,7 @@ export circuit slashBond(
   insert(safety_pool, (cardId, bal + half));
 }
 
-// Configure bond parameters for a card (owner-only)
+// Configure bond parameters for a card (admin-only)
 // Fields:
 //  - minBondAmount: minimum bond required
 //  - defaultTTL: fallback expiry if caller does not specify TTL
@@ -160,12 +163,27 @@ export circuit configureBond(
   dynamicPricing: Bool,
   riskMultiplier: Uint<64>
 ): [] {
-  const sk = ownerSecret();
-  const oid = ownerId(round, sk);
-  assert(contains(card_owner, (cardId, oid)), "not owner");
+  const sk = adminSecret();
+  const aid = adminId(round, sk);
+  assert(contains(card_admin, (cardId, aid)), "not admin");
 
   if (contains(bond_config, cardId)) {
     remove(bond_config, cardId);
   }
   insert(bond_config, (cardId, minBondAmount, defaultTTL, dynamicPricing, riskMultiplier));
+}
+
+// Register or update the admin mapping for a card (called by admin)
+// This links a given cardId to the adminId derived from the caller's adminSecret at the current epoch.
+export circuit registerCardAdmin(cardId: Bytes<32>): [] {
+  const sk = adminSecret();
+  const aid = adminId(round, sk);
+  if (contains(card_admin, (cardId, aid))) {
+    // already registered for this admin; no-op
+    return;
+  }
+  // Remove any previous admin mapping for this card if present
+  // Note: Compact sets are keyed by full tuple; emulate replace by allowing multiple entries or by prior knowledge.
+  // Here we simply insert (supports multiple epochs/admin rotations). Downstream checks require exact (cardId, aid).
+  insert(card_admin, (cardId, aid));
 }

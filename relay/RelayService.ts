@@ -14,7 +14,7 @@ interface Contract {
 
 import { createHash, createHmac, randomBytes } from 'crypto';
 import Bull from 'bull';
-import Redis from 'ioredis';
+import Redis, { RedisOptions } from 'ioredis';
 import winston from 'winston';
 import * as cron from 'node-cron';
 
@@ -46,18 +46,19 @@ export class NoirCardRelay {
         abuseEscrowAddress: string,
         noirCardAddress: string,
         relayPrivateKey: string,
-        redisConfig?: Redis.RedisOptions
+        redisConfig?: RedisOptions
     ) {
         this.midnightProvider = midnightProvider;
         this.relayPrivateKey = relayPrivateKey;
         
         // Initialize Redis for caching and job queues
-        this.redis = new Redis(redisConfig || {
-            host: process.env.REDIS_HOST || 'localhost',
-            port: parseInt(process.env.REDIS_PORT || '6379'),
-            retryDelayOnFailover: 100,
-            maxRetriesPerRequest: 3
-        });
+        this.redis = new Redis(
+            redisConfig || {
+                host: (process.env.REDIS_HOST as string) || 'localhost',
+                port: parseInt((process.env.REDIS_PORT as string) || '6379'),
+                maxRetriesPerRequest: 3,
+            }
+        );
         
         // Initialize logger
         this.logger = winston.createLogger({
@@ -748,11 +749,11 @@ export class NoirCardRelay {
 
     private async verifyAttestorAuthorization(cardId: string, attestor: string): Promise<boolean> {
         try {
-            const cardOwner = await this.retryOperation(async () => {
-                return await this.noirCardContract.call('getCardOwner', [cardId]);
+            const cardAdmin = await this.retryOperation(async () => {
+                return await this.noirCardContract.call('getCardAdmin', [cardId]);
             });
             
-            if (cardOwner.toLowerCase() === attestor.toLowerCase()) {
+            if (cardAdmin.toLowerCase() === attestor.toLowerCase()) {
                 return true;
             }
             

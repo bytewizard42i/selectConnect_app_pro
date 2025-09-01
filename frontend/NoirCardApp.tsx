@@ -29,7 +29,7 @@ declare global {
 interface NoirCardData {
   cardId: string;
   alias: string;
-  owner: string;
+  card_admin: string;
   active: boolean;
   policy: CardPolicy;
   revealLevels: RevealLevel[];
@@ -107,7 +107,7 @@ export const NoirCardApp: React.FC = () => {
       {
         cardId: '0x123...',
         alias: 'John Doe - Tech Conference',
-        owner: await signer.getAddress(),
+        card_admin: await signer.getAddress(),
         active: true,
         policy: {
           requiresBond: true,
@@ -165,11 +165,11 @@ export const NoirCardApp: React.FC = () => {
     if (!signer) return;
 
     try {
-      // Generate accessor commitment using Web Crypto API
+      // Generate recipient commitment using Web Crypto API
       const encoder = new TextEncoder();
-      const commitData = encoder.encode(`accessor_${Date.now()}`);
+      const commitData = encoder.encode(`recipient_${Date.now()}`);
       const commitBuffer = await crypto.subtle.digest('SHA-256', commitData);
-      const accessorCommit = Array.from(new Uint8Array(commitBuffer))
+      const recipientCommit = Array.from(new Uint8Array(commitBuffer))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
       
@@ -178,7 +178,7 @@ export const NoirCardApp: React.FC = () => {
         const result = await noirCardContract.call('generateAccessLink', [
           cardId, 
           customTTL || 0, 
-          accessorCommit
+          recipientCommit
         ]);
         // Handle result to get linkId
       }
@@ -254,11 +254,11 @@ export const NoirCardApp: React.FC = () => {
     if (!signer) return;
 
     try {
-      // Generate accessor commitment
+      // Generate recipient commitment for per-link access (card_recipient)
       const encoder = new TextEncoder();
-      const accessorData = encoder.encode(`accessor_${await signer.getAddress()}`);
-      const commitBuffer = await crypto.subtle.digest('SHA-256', accessorData);
-      const accessorCommit = Array.from(new Uint8Array(commitBuffer))
+      const recipientData = encoder.encode(`recipient_${await signer.getAddress()}`);
+      const commitBuffer = await crypto.subtle.digest('SHA-256', recipientData);
+      const recipientCommit = Array.from(new Uint8Array(commitBuffer))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
       
@@ -267,7 +267,7 @@ export const NoirCardApp: React.FC = () => {
         const revealedData = await noirCardContract.call('accessCard', [
           linkId, 
           level, 
-          accessorCommit
+          recipientCommit
         ]);
         
         // Process revealed data

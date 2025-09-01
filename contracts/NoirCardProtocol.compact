@@ -1,0 +1,812 @@
+// SPDX-License-Identifier: Apache-2.0
+// ============================================================================
+// NoirCard Protocol - Privacy-Preserving Business Cards with Abuse Prevention
+// ============================================================================
+// Version: 1.0.0
+// Compact Language Version: 0.16
+// 
+// PURPOSE:
+// This unified contract implements a privacy-preserving digital business card
+// protocol with the following features:
+// - Pseudonymous contact information (phone/email) stored as commitments
+// - Rescindable credentials for proof of affiliation/qualifications
+// - Progressive reveal of information through access levels
+// - Staking mechanism to disincentivize spam and harassment
+// - Time-limited access links with revocation capabilities
+//
+// PRIVACY MODEL:
+// - Public: Minimal metadata (IDs, counters, state flags)
+// - Private: Actual contact info, credentials, sender identities
+// - Selective Disclosure: Only explicitly disclosed data goes on-chain
+//
+// ROLE TERMINOLOGY:
+// - card_admin: The authority who owns and manages the card
+// - card_recipient: The party accessing the card through a link
+// - sender: Party posting a bond to initiate contact
+// ============================================================================
+
+pragma language_version 0.16;
+
+import CompactStandardLibrary;
+
+// ============================================================================
+// CONSTANTS AND TYPES
+// ============================================================================
+
+// Domain tags for cryptographic operations (prevents cross-domain attacks)
+const DOMAIN_CARD       : Bytes<32> = pad(32, "noircard:card:v1");
+const DOMAIN_LINK       : Bytes<32> = pad(32, "noircard:link:v1");
+const DOMAIN_LEVEL      : Bytes<32> = pad(32, "noircard:level:v1");
+const DOMAIN_CREDENTIAL : Bytes<32> = pad(32, "noircard:cred:v1");
+const DOMAIN_BOND       : Bytes<32> = pad(32, "noircard:bond:v1");
+const DOMAIN_CONTACT    : Bytes<32> = pad(32, "noircard:contact:v1");
+
+// Card lifecycle states
+export enum CardState { 
+    UNSET,      // Never created
+    ACTIVE,     // Normal operation
+    SUSPENDED,  // Temporarily disabled (can be reactivated)
+    REVOKED     // Permanently disabled
+}
+
+// Credential states for rescindable credentials
+export enum CredentialState {
+    NONE,       // No credential issued
+    ISSUED,     // Active credential
+    REVOKED     // Credential has been rescinded
+}
+
+// Bond states for abuse prevention
+export enum BondState {
+    POSTED,     // Bond is active
+    REFUNDED,   // Bond returned to sender
+    SLASHED     // Bond confiscated due to abuse
+}
+
+// ============================================================================
+// PUBLIC LEDGER STATE (On-Chain)
+// ============================================================================
+
+// Global epoch counter for anti-linkability across operations
+export ledger round: Counter;
+
+// === Card Management ===
+// Set of all card IDs that have been created
+export ledger cards: Set<Bytes<32>>;
+
+// Card state mapping: cardId -> current state
+export ledger card_states: Set<(Bytes<32>, CardState)>;
+
+// Card admin mapping: cardId -> adminId (derived from secret)
+export ledger card_admins: Set<(Bytes<32>, Bytes<32>)>;
+
+// Card policy configuration: cardId -> (requiresBond, minBondAmount, defaultTTL, revealDelay)
+export ledger card_policies: Set<(Bytes<32>, Bool, Uint<64>, Uint<64>, Uint<64>)>;
+
+// === Contact Information (Commitments Only) ===
+// Primary contact commitment: cardId -> commitment to encrypted contact bundle
+export ledger contact_commits: Set<(Bytes<32>, Bytes<32>)>;
+
+// Pseudonymous handles: cardId -> (phoneCommit, emailCommit)
+// These are commitments to salted hashes of pseudonymous contact methods
+export ledger pseudonym_commits: Set<(Bytes<32>, Bytes<32>, Bytes<32>)>;
+
+// === Credentials (Rescindable) ===
+// Credential state per card: cardId -> credential state
+export ledger credential_states: Set<(Bytes<32>, CredentialState)>;
+
+// Credential commitments: cardId -> commitment to credential data
+export ledger credential_commits: Set<(Bytes<32>, Bytes<32>)>;
+
+// Credential metadata: cardId -> (issuedAt, revokedAt, revocationHash)
+export ledger credential_meta: Set<(Bytes<32>, Uint<64>, Uint<64>, Bytes<32>)>;
+
+// === Progressive Reveal ===
+// Merkle tree of reveal level commitments for progressive disclosure
+export ledger reveal_tree: MerkleTree;
+
+// Reveal level mapping: cardId -> current max level added
+export ledger reveal_levels: Set<(Bytes<32>, Uint<8>)>;
+
+// === Access Links ===
+// Set of all generated link IDs
+export ledger links: Set<Bytes<32>>;
+
+// Link metadata: linkId -> (cardId, recipientId, createdAt, expiresAt, isRevoked, currentLevel)
+export ledger link_meta: Set<(Bytes<32>, Bytes<32>, Bytes<32>, Uint<64>, Uint<64>, Bool, Uint<8>)>;
+
+// === Abuse Prevention (Staking) ===
+// Set of all bond IDs
+export ledger bonds: Set<Bytes<32>>;
+
+// Bond details: bondId -> (cardId, senderCommit, amount, postedAt, expiresAt, state)
+export ledger bond_meta: Set<(Bytes<32>, Bytes<32>, Bytes<32>, Uint<64>, Uint<64>, Uint<64>, BondState)>;
+
+// Sender reputation: senderCommit -> (totalBonds, slashedCount, lastSlashTime, totalAmountSlashed)
+export ledger sender_reputation: Set<(Bytes<32>, Uint<32>, Uint<32>, Uint<64>, Uint<64>)>;
+
+// Safety pool per card (accumulated from slashed bonds): cardId -> balance
+export ledger safety_pools: Set<(Bytes<32>, Uint<64>)>;
+
+// Abuse reports counter: cardId -> upheld report count
+export ledger abuse_counters: Set<(Bytes<32>, Uint<64>)>;
+
+// ============================================================================
+// CONSTRUCTOR
+// ============================================================================
+
+// Initialize the contract with epoch counter
+constructor() {
+    round.increment(1);
+}
+
+// ============================================================================
+// WITNESS FUNCTIONS (Private Inputs)
+// ============================================================================
+
+// Admin's secret key (never revealed on-chain)
+witness adminSecret(): Bytes<32>;
+
+// Recipient's secret key for accessing cards
+witness recipientSecret(): Bytes<32>;
+
+// Sender's secret for bond operations
+witness senderSecret(): Bytes<32>;
+
+// Random value for commitments
+witness randomValue(): Bytes<32>;
+
+// Contact data (encrypted off-chain, committed on-chain)
+witness contactData(): Bytes<32>;
+
+// Credential data
+witness credentialData(): Bytes<32>;
+
+// Revocation reason (kept private)
+witness revocationReason(): Opaque<'string'>;
+
+// Abuse evidence (for moderation)
+witness abuseEvidence(): Opaque<'bytes'>;
+
+// Timestamp witness
+witness currentTimestamp(): Uint<64>;
+
+// ============================================================================
+// HELPER CIRCUITS (Internal Functions)
+// ============================================================================
+
+// Derive admin ID from secret and current round (epoch-bound identity)
+circuit deriveAdminId(round: Field, secret: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<3, Bytes<32>>>([
+        DOMAIN_CARD,
+        round as Bytes<32>,
+        secret
+    ]);
+}
+
+// Derive recipient ID from secret and round
+circuit deriveRecipientId(round: Field, secret: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<3, Bytes<32>>>([
+        DOMAIN_LINK,
+        round as Bytes<32>,
+        secret
+    ]);
+}
+
+// Generate card ID from admin ID and alias hash
+circuit generateCardId(adminId: Bytes<32>, aliasHash: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<3, Bytes<32>>>([
+        DOMAIN_CARD,
+        adminId,
+        aliasHash
+    ]);
+}
+
+// Generate link ID
+circuit generateLinkId(cardId: Bytes<32>, recipientId: Bytes<32>, timestamp: Uint<64>): Bytes<32> {
+    return persistentHash<Vector<4, Bytes<32>>>([
+        DOMAIN_LINK,
+        cardId,
+        recipientId,
+        toBytes32(timestamp)
+    ]);
+}
+
+// Generate bond ID
+circuit generateBondId(cardId: Bytes<32>, senderCommit: Bytes<32>, timestamp: Uint<64>): Bytes<32> {
+    return persistentHash<Vector<4, Bytes<32>>>([
+        DOMAIN_BOND,
+        cardId,
+        senderCommit,
+        toBytes32(timestamp)
+    ]);
+}
+
+// Convert Uint<64> to Bytes<32>
+circuit toBytes32(value: Uint<64>): Bytes<32> {
+    // Implementation would convert the uint to bytes representation
+    // This is a placeholder - actual implementation depends on Compact stdlib
+    return pad(32, "") as Bytes<32>; // Simplified
+}
+
+// Verify admin authorization for a card
+circuit requireCardAdmin(cardId: Bytes<32>): [] {
+    const secret = adminSecret();
+    const adminId = deriveAdminId(round, secret);
+    assert(contains(card_admins, (cardId, adminId)), "Not authorized as card admin");
+}
+
+// Calculate dynamic bond amount based on sender reputation
+circuit calculateRequiredBond(
+    minBond: Uint<64>,
+    senderCommit: Bytes<32>
+): Uint<64> {
+    // Check sender reputation
+    let (commit, totalBonds, slashedCount, lastSlash, totalSlashed) = 
+        getOrDefault(sender_reputation, senderCommit, 
+            (senderCommit, 0u32, 0u32, 0u64, 0u64));
+    
+    // No history = minimum bond
+    if (slashedCount == 0u32) {
+        return minBond;
+    }
+    
+    // Increase bond requirement by 50% per previous slash
+    let multiplier = 100u64 + (toUint64(slashedCount) * 50u64);
+    return (minBond * multiplier) / 100u64;
+}
+
+// Convert Uint<32> to Uint<64>
+circuit toUint64(value: Uint<32>): Uint<64> {
+    return value as Uint<64>;
+}
+
+// ============================================================================
+// CARD MANAGEMENT CIRCUITS
+// ============================================================================
+
+// Create a new NoirCard with privacy-preserving features
+// @param aliasHash - Hash of the card alias/handle (non-PII)
+// @param requiresBond - Whether senders must post bonds
+// @param minBondAmount - Minimum bond amount required
+// @param defaultTTL - Default time-to-live for bonds/links
+// @param phoneCommit - Commitment to pseudonymous phone
+// @param emailCommit - Commitment to pseudonymous email
+// @return cardId - The generated card ID
+export circuit createCard(
+    aliasHash: Bytes<32>,
+    requiresBond: Bool,
+    minBondAmount: Uint<64>,
+    defaultTTL: Uint<64>,
+    phoneCommit: Bytes<32>,
+    emailCommit: Bytes<32>
+): Bytes<32> {
+    // Derive admin ID from secret
+    const secret = adminSecret();
+    const adminId = deriveAdminId(round, secret);
+    const cardId = generateCardId(adminId, aliasHash);
+    
+    // Ensure card doesn't already exist
+    assert(!contains(cards, cardId), "Card already exists");
+    
+    // Create card with initial state
+    insert(cards, cardId);
+    insert(card_states, (cardId, CardState.ACTIVE));
+    insert(card_admins, (cardId, adminId));
+    insert(card_policies, (cardId, requiresBond, minBondAmount, defaultTTL, 0u64));
+    
+    // Store pseudonymous contact commitments
+    insert(pseudonym_commits, (cardId, phoneCommit, emailCommit));
+    
+    // Initialize other state
+    insert(reveal_levels, (cardId, 0u8));
+    insert(abuse_counters, (cardId, 0u64));
+    insert(safety_pools, (cardId, 0u64));
+    insert(credential_states, (cardId, CredentialState.NONE));
+    
+    return disclose(cardId);
+}
+
+// Update contact information (admin only)
+// Rotates the contact commitment while preserving privacy
+export circuit updateContact(cardId: Bytes<32>): [] {
+    requireCardAdmin(cardId);
+    
+    // Verify card is active
+    assert(contains(card_states, (cardId, CardState.ACTIVE)), "Card not active");
+    
+    // Generate new commitment to updated contact data
+    const newContactData = contactData();
+    const r = randomValue();
+    const newCommitment = persistentCommit<Vector<3, Bytes<32>>>([
+        DOMAIN_CONTACT,
+        newContactData,
+        r
+    ]);
+    
+    // Update or insert contact commitment
+    if (contains(contact_commits, cardId)) {
+        remove(contact_commits, cardId);
+    }
+    insert(contact_commits, (cardId, newCommitment));
+    
+    // Increment round for unlinkability
+    round.increment(1);
+}
+
+// Update pseudonymous handles (admin only)
+export circuit updatePseudonyms(
+    cardId: Bytes<32>,
+    newPhoneCommit: Bytes<32>,
+    newEmailCommit: Bytes<32>
+): [] {
+    requireCardAdmin(cardId);
+    assert(contains(card_states, (cardId, CardState.ACTIVE)), "Card not active");
+    
+    // Remove old pseudonyms
+    let (cid, oldPhone, oldEmail) = get(pseudonym_commits, cardId);
+    remove(pseudonym_commits, cardId);
+    
+    // Insert new pseudonyms
+    insert(pseudonym_commits, (cardId, newPhoneCommit, newEmailCommit));
+    
+    round.increment(1);
+}
+
+// ============================================================================
+// CREDENTIAL MANAGEMENT (Rescindable)
+// ============================================================================
+
+// Issue a credential (admin only)
+// Credentials are commitments to off-chain data that can be selectively revealed
+export circuit issueCredential(cardId: Bytes<32>): [] {
+    requireCardAdmin(cardId);
+    assert(contains(card_states, (cardId, CardState.ACTIVE)), "Card not active");
+    
+    // Check current credential state
+    let (cid, state) = get(credential_states, cardId);
+    assert(state != CredentialState.ISSUED, "Credential already issued");
+    
+    // Create credential commitment
+    const credData = credentialData();
+    const r = randomValue();
+    const credCommit = persistentCommit<Vector<3, Bytes<32>>>([
+        DOMAIN_CREDENTIAL,
+        credData,
+        r
+    ]);
+    
+    // Update credential state and commitment
+    remove(credential_states, cardId);
+    insert(credential_states, (cardId, CredentialState.ISSUED));
+    
+    if (contains(credential_commits, cardId)) {
+        remove(credential_commits, cardId);
+    }
+    insert(credential_commits, (cardId, credCommit));
+    
+    // Record issuance metadata
+    const now = currentTimestamp();
+    if (contains(credential_meta, cardId)) {
+        remove(credential_meta, cardId);
+    }
+    insert(credential_meta, (cardId, now, 0u64, pad(32, "")));
+    
+    round.increment(1);
+}
+
+// Rescind/revoke a credential (admin only)
+// The reason remains private but a hash is stored for auditability
+export circuit rescindCredential(cardId: Bytes<32>): [] {
+    requireCardAdmin(cardId);
+    
+    // Verify credential is currently issued
+    let (cid, state) = get(credential_states, cardId);
+    assert(state == CredentialState.ISSUED, "No credential to rescind");
+    
+    // Get revocation reason (stays private)
+    const reason = revocationReason();
+    const reasonHash = persistentHash<Opaque<'string'>>(reason);
+    
+    // Update credential state
+    remove(credential_states, cardId);
+    insert(credential_states, (cardId, CredentialState.REVOKED));
+    
+    // Update metadata with revocation info
+    let (cid2, issuedAt, oldRevoked, oldHash) = get(credential_meta, cardId);
+    remove(credential_meta, cardId);
+    const now = currentTimestamp();
+    insert(credential_meta, (cardId, issuedAt, now, reasonHash));
+    
+    round.increment(1);
+}
+
+// ============================================================================
+// PROGRESSIVE REVEAL
+// ============================================================================
+
+// Add a reveal level (admin only)
+// Each level is a commitment to encrypted data that recipients can progressively access
+export circuit addRevealLevel(cardId: Bytes<32>, levelData: Bytes<32>): [] {
+    requireCardAdmin(cardId);
+    assert(contains(card_states, (cardId, CardState.ACTIVE)), "Card not active");
+    
+    // Create commitment for this reveal level
+    const r = randomValue();
+    const levelCommit = persistentCommit<Vector<3, Bytes<32>>>([
+        DOMAIN_LEVEL,
+        levelData,
+        r
+    ]);
+    
+    // Add to merkle tree for proof of inclusion
+    treeInsert(reveal_tree, levelCommit);
+    
+    // Update level counter
+    let (cid, currentLevel) = get(reveal_levels, cardId);
+    remove(reveal_levels, cardId);
+    insert(reveal_levels, (cardId, currentLevel + 1u8));
+    
+    round.increment(1);
+}
+
+// ============================================================================
+// ACCESS LINK MANAGEMENT
+// ============================================================================
+
+// Generate an access link for a card recipient
+// Links are time-limited and can be revoked by the admin
+export circuit generateAccessLink(
+    cardId: Bytes<32>,
+    createdAt: Uint<64>,
+    ttl: Uint<64>
+): Bytes<32> {
+    assert(contains(cards, cardId), "Card does not exist");
+    assert(contains(card_states, (cardId, CardState.ACTIVE)), "Card not active");
+    
+    // Derive recipient ID from their secret
+    const recipientSec = recipientSecret();
+    const recipientId = deriveRecipientId(round, recipientSec);
+    
+    // Generate unique link ID
+    const linkId = generateLinkId(cardId, recipientId, createdAt);
+    const expiresAt = createdAt + ttl;
+    
+    // Store link and metadata
+    insert(links, linkId);
+    insert(link_meta, (linkId, cardId, recipientId, createdAt, expiresAt, false, 0u8));
+    
+    return disclose(linkId);
+}
+
+// Access next reveal level through a link (recipient only)
+// Verifies link validity and increments access level
+export circuit accessNextLevel(
+    linkId: Bytes<32>,
+    currentTime: Uint<64>,
+    levelData: Bytes<32>
+): Bytes<32> {
+    // Verify link exists and get metadata
+    let (lid, cardId, recipientId, createdAt, expiresAt, isRevoked, currentLevel) = 
+        get(link_meta, linkId);
+    
+    assert(lid == linkId, "Invalid link");
+    assert(!isRevoked, "Link has been revoked");
+    assert(currentTime < expiresAt, "Link has expired");
+    
+    // Verify recipient authorization
+    const recipientSec = recipientSecret();
+    const derivedRecipientId = deriveRecipientId(round, recipientSec);
+    assert(recipientId == derivedRecipientId, "Not authorized recipient");
+    
+    // Verify level commitment is in the reveal tree
+    const r = randomValue();
+    const levelCommit = persistentCommit<Vector<3, Bytes<32>>>([
+        DOMAIN_LEVEL,
+        levelData,
+        r
+    ]);
+    assert(treeContains(reveal_tree, levelCommit), "Invalid reveal level");
+    
+    // Update link to next level
+    remove(link_meta, linkId);
+    insert(link_meta, (linkId, cardId, recipientId, createdAt, expiresAt, isRevoked, currentLevel + 1u8));
+    
+    // Return the level data for off-chain decryption
+    return disclose(levelData);
+}
+
+// Revoke a link (admin only)
+export circuit revokeLink(cardId: Bytes<32>, linkId: Bytes<32>): [] {
+    requireCardAdmin(cardId);
+    
+    // Get link metadata
+    let (lid, lcardId, recipientId, createdAt, expiresAt, isRevoked, currentLevel) = 
+        get(link_meta, linkId);
+    
+    assert(lid == linkId && lcardId == cardId, "Link/card mismatch");
+    assert(!isRevoked, "Already revoked");
+    
+    // Mark as revoked
+    remove(link_meta, linkId);
+    insert(link_meta, (linkId, cardId, recipientId, createdAt, expiresAt, true, currentLevel));
+    
+    round.increment(1);
+}
+
+// ============================================================================
+// ABUSE BOND STAKING
+// ============================================================================
+
+// Post an abuse bond to contact a card holder
+// Senders must stake tokens to deter harassment
+// @param cardId - The card to contact
+// @param amount - Bond amount to stake
+// @param ttl - Time-to-live for the bond
+// @return bondId - The generated bond ID
+export circuit postBond(
+    cardId: Bytes<32>,
+    amount: Uint<64>,
+    ttl: Uint<64>
+): Bytes<32> {
+    assert(contains(cards, cardId), "Card does not exist");
+    assert(contains(card_states, (cardId, CardState.ACTIVE)), "Card not active");
+    
+    // Get card policy
+    let (cid, requiresBond, minBond, defaultTTL, maxSlashes) = get(card_policies, cardId);
+    assert(requiresBond, "Card does not require bonds");
+    
+    // Derive sender commitment from secret
+    const senderSec = senderSecret();
+    const senderCommit = persistentHash<Vector<2, Bytes<32>>>([
+        DOMAIN_BOND,
+        senderSec
+    ]);
+    
+    // Calculate required bond based on sender reputation
+    const requiredAmount = calculateRequiredBond(minBond, senderCommit);
+    assert(amount >= requiredAmount, "Insufficient bond amount");
+    
+    // Generate bond ID
+    const now = currentTimestamp();
+    const bondId = generateBondId(cardId, senderCommit, now);
+    const expiresAt = now + ttl;
+    
+    // Store bond
+    insert(bonds, bondId);
+    insert(bond_meta, (bondId, cardId, senderCommit, amount, now, expiresAt, BondState.POSTED));
+    
+    // Update sender reputation
+    if (contains(sender_reputation, senderCommit)) {
+        let (sc, totalBonds, slashedCount, lastSlash, totalSlashed) = get(sender_reputation, senderCommit);
+        remove(sender_reputation, senderCommit);
+        insert(sender_reputation, (senderCommit, totalBonds + 1u32, slashedCount, lastSlash, totalSlashed));
+    } else {
+        insert(sender_reputation, (senderCommit, 1u32, 0u32, 0u64, 0u64));
+    }
+    
+    return disclose(bondId);
+}
+
+// Refund a bond after successful interaction
+// Can be called by sender after TTL expires or by admin
+export circuit refundBond(bondId: Bytes<32>): [] {
+    assert(contains(bonds, bondId), "Bond does not exist");
+    
+    // Get bond metadata
+    let (bid, cardId, senderCommit, amount, postedAt, expiresAt, state) = get(bond_meta, bondId);
+    assert(state == BondState.POSTED, "Bond not in refundable state");
+    
+    // Check authorization: either sender or card admin
+    const senderSec = senderSecret();
+    const derivedSenderCommit = persistentHash<Vector<2, Bytes<32>>>([
+        DOMAIN_BOND,
+        senderSec
+    ]);
+    
+    const now = currentTimestamp();
+    if (derivedSenderCommit == senderCommit) {
+        // Sender can refund after expiry
+        assert(now >= expiresAt, "Bond not yet expired");
+    } else {
+        // Admin can refund anytime
+        requireCardAdmin(cardId);
+    }
+    
+    // Update bond state
+    remove(bond_meta, bondId);
+    insert(bond_meta, (bondId, cardId, senderCommit, amount, postedAt, expiresAt, BondState.REFUNDED));
+    
+    round.increment(1);
+}
+
+// Slash a bond for abuse (admin only)
+// Evidence remains private but hash is stored
+export circuit slashBond(bondId: Bytes<32>): [] {
+    assert(contains(bonds, bondId), "Bond does not exist");
+    
+    // Get bond metadata
+    let (bid, cardId, senderCommit, amount, postedAt, expiresAt, state) = get(bond_meta, bondId);
+    assert(state == BondState.POSTED, "Bond not slashable");
+    
+    // Verify admin authorization
+    requireCardAdmin(cardId);
+    
+    // Get abuse evidence (stays private)
+    const evidence = abuseEvidence();
+    const evidenceHash = persistentHash<Opaque<'bytes'>>(evidence);
+    
+    // Update bond state
+    remove(bond_meta, bondId);
+    insert(bond_meta, (bondId, cardId, senderCommit, amount, postedAt, expiresAt, BondState.SLASHED));
+    
+    // Update sender reputation
+    const now = currentTimestamp();
+    if (contains(sender_reputation, senderCommit)) {
+        let (sc, totalBonds, slashedCount, lastSlash, totalSlashed) = get(sender_reputation, senderCommit);
+        remove(sender_reputation, senderCommit);
+        insert(sender_reputation, (senderCommit, totalBonds, slashedCount + 1u32, now, totalSlashed + amount));
+    }
+    
+    // Add to safety pool for the card
+    if (contains(safety_pools, cardId)) {
+        let (cid, currentPool) = get(safety_pools, cardId);
+        remove(safety_pools, cardId);
+        insert(safety_pools, (cardId, currentPool + amount));
+    }
+    
+    // Increment abuse counter
+    if (contains(abuse_counters, cardId)) {
+        let (cid, currentCount) = get(abuse_counters, cardId);
+        remove(abuse_counters, cardId);
+        insert(abuse_counters, (cardId, currentCount + 1u64));
+    }
+    
+    round.increment(1);
+}
+
+// ============================================================================
+// CARD LIFECYCLE MANAGEMENT
+// ============================================================================
+
+// Suspend a card temporarily (admin only)
+// Card becomes inactive but can be reactivated
+export circuit suspendCard(cardId: Bytes<32>): [] {
+    requireCardAdmin(cardId);
+    
+    // Check current state
+    let (cid, state) = get(card_states, cardId);
+    assert(state == CardState.ACTIVE, "Card not active");
+    
+    // Update state
+    remove(card_states, cardId);
+    insert(card_states, (cardId, CardState.SUSPENDED));
+    
+    round.increment(1);
+}
+
+// Reactivate a suspended card (admin only)
+export circuit reactivateCard(cardId: Bytes<32>): [] {
+    requireCardAdmin(cardId);
+    
+    // Check current state
+    let (cid, state) = get(card_states, cardId);
+    assert(state == CardState.SUSPENDED, "Card not suspended");
+    
+    // Update state
+    remove(card_states, cardId);
+    insert(card_states, (cardId, CardState.ACTIVE));
+    
+    round.increment(1);
+}
+
+// Permanently revoke a card (admin only)
+// Card cannot be reactivated after revocation
+export circuit revokeCard(cardId: Bytes<32>): [] {
+    requireCardAdmin(cardId);
+    
+    // Check current state
+    let (cid, state) = get(card_states, cardId);
+    assert(state != CardState.REVOKED, "Card already revoked");
+    
+    // Update state
+    remove(card_states, cardId);
+    insert(card_states, (cardId, CardState.REVOKED));
+    
+    // Revoke all active links
+    // Note: In practice, this would iterate through links
+    // For now, we just mark the card as revoked
+    
+    round.increment(1);
+}
+
+// Update card policy (admin only)
+export circuit updateCardPolicy(
+    cardId: Bytes<32>,
+    requiresBond: Bool,
+    minBondAmount: Uint<64>,
+    defaultTTL: Uint<64>,
+    maxSlashes: Uint<64>
+): [] {
+    requireCardAdmin(cardId);
+    assert(contains(card_states, (cardId, CardState.ACTIVE)), "Card not active");
+    
+    // Remove old policy
+    let (cid, oldReq, oldMin, oldTTL, oldMax) = get(card_policies, cardId);
+    remove(card_policies, cardId);
+    
+    // Insert new policy
+    insert(card_policies, (cardId, requiresBond, minBondAmount, defaultTTL, maxSlashes));
+    
+    round.increment(1);
+}
+
+// ============================================================================
+// READ-ONLY QUERIES (View Functions)
+// ============================================================================
+
+// Check if a card exists and is active
+export circuit isCardActive(cardId: Bytes<32>): Bool {
+    if (!contains(cards, cardId)) {
+        return disclose(false);
+    }
+    
+    let (cid, state) = get(card_states, cardId);
+    return disclose(state == CardState.ACTIVE);
+}
+
+// Get card policy information
+export circuit getCardPolicy(cardId: Bytes<32>): (Bool, Uint<64>, Uint<64>, Uint<64>) {
+    assert(contains(cards, cardId), "Card does not exist");
+    
+    let (cid, requiresBond, minBond, defaultTTL, maxSlashes) = get(card_policies, cardId);
+    return (disclose(requiresBond), disclose(minBond), disclose(defaultTTL), disclose(maxSlashes));
+}
+
+// Check bond status
+export circuit getBondState(bondId: Bytes<32>): BondState {
+    assert(contains(bonds, bondId), "Bond does not exist");
+    
+    let (bid, cardId, senderCommit, amount, postedAt, expiresAt, state) = get(bond_meta, bondId);
+    return disclose(state);
+}
+
+// Get sender reputation score
+export circuit getSenderReputation(senderCommit: Bytes<32>): (Uint<32>, Uint<32>) {
+    if (contains(sender_reputation, senderCommit)) {
+        let (sc, totalBonds, slashedCount, lastSlash, totalSlashed) = get(sender_reputation, senderCommit);
+        return (disclose(totalBonds), disclose(slashedCount));
+    }
+    return (disclose(0u32), disclose(0u32));
+}
+
+// Get card's safety pool balance
+export circuit getSafetyPool(cardId: Bytes<32>): Uint<64> {
+    assert(contains(cards, cardId), "Card does not exist");
+    
+    if (contains(safety_pools, cardId)) {
+        let (cid, balance) = get(safety_pools, cardId);
+        return disclose(balance);
+    }
+    return disclose(0u64);
+}
+
+// Get credential state for a card
+export circuit getCredentialState(cardId: Bytes<32>): CredentialState {
+    assert(contains(cards, cardId), "Card does not exist");
+    
+    let (cid, state) = get(credential_states, cardId);
+    return disclose(state);
+}
+
+// Get reveal level for a card
+export circuit getRevealLevel(cardId: Bytes<32>): Uint<8> {
+    assert(contains(cards, cardId), "Card does not exist");
+    
+    let (cid, level) = get(reveal_levels, cardId);
+    return disclose(level);
+}
+
+// ============================================================================
+// END OF CONTRACT
+// ============================================================================
