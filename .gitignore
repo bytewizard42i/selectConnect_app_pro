@@ -1,4 +1,16 @@
-node_modules
-
+node_modules/
+.env
+*.log
+*.zip
+.DS_Store
+build/
+dist/
+logs/
+*.local
+.cache/
+.midnight/
+contracts/build/
+coverage/
+.nyc_output/
 # Ignore packaged archives
 *.zip

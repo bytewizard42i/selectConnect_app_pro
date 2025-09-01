@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # Midnight Local Proof Server
+  midnight-proof-server:
+    image: midnightnetwork/proof-server:v0.16.0
+    container_name: midnight-proof-server
+    ports:
+      - "6300:6300"  # Proof server port
+      - "6301:6301"  # Metrics port
+    environment:
+      - PROOF_SERVER_PORT=6300
+      - METRICS_PORT=6301
+      - LOG_LEVEL=info
+      - MAX_CIRCUIT_SIZE=2097152  # 2MB max circuit size
+      - CACHE_SIZE=1000
+      - WORKER_THREADS=4
+    volumes:
+      - ./contracts/build:/circuits  # Mount compiled circuits
+      - midnight-proof-cache:/cache
+    networks:
+      - noircard-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6301/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Midnight Local Node (for testing)
+  midnight-node:
+    image: midnightnetwork/node:v0.16.0
+    container_name: midnight-node
+    ports:
+      - "9944:9944"  # WebSocket RPC
+      - "9933:9933"  # HTTP RPC
+      - "30333:30333"  # P2P
+    environment:
+      - CHAIN=local
+      - RPC_EXTERNAL=true
+      - WS_EXTERNAL=true
+      - RPC_CORS=all
+      - PRUNING=archive
+    volumes:
+      - midnight-chain-data:/data
+    networks:
+      - noircard-network
+    command: [
+      "--dev",
+      "--rpc-external",
+      "--ws-external",
+      "--rpc-cors=all",
+      "--pruning=archive",
+      "--base-path=/data"
+    ]
+
+  # Redis for Relay Service
+  redis:
+    image: redis:7-alpine
+    container_name: noircard-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - noircard-network
+    command: redis-server --appendonly yes --requirepass noircard_redis_2024
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Bull Dashboard for Job Monitoring
+  bull-board:
+    image: deadly0/bull-board:latest
+    container_name: noircard-bull-board
+    ports:
+      - "3002:3000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=noircard_redis_2024
+    depends_on:
+      - redis
+    networks:
+      - noircard-network
+
+volumes:
+  midnight-proof-cache:
+  midnight-chain-data:
+  redis-data:
+
+networks:
+  noircard-network:
+    driver: bridge

@@ -1,16 +1,14 @@
-// Note: @midnight-ntwrk/midnight-js-sdk would be the actual Midnight SDK
-// For now using placeholder types until SDK is available
-interface MidnightProvider {
-    getContract(address: string): Promise<Contract>;
-}
-
-interface MidnightSigner {
-    signMessage(message: string): Promise<string>;
-}
-
-interface Contract {
-    call(method: string, args: any[]): Promise<any>;
-}
+// Import actual Midnight SDK
+import { 
+    MidnightProvider, 
+    MidnightSigner, 
+    Contract,
+    createProvider,
+    createWallet,
+    CompactContract,
+    ProofGenerator
+} from '@midnight-ntwrk/midnight-js-sdk';
+import { zkCrypto } from '@midnight-ntwrk/zk-crypto';
 
 import { createHash, createHmac, randomBytes } from 'crypto';
 import Bull from 'bull';
