@@ -18,12 +18,12 @@ import CompactStandardLibrary;
 //  - export circuit ...  => public entry points that verify conditions and update state
 
 // Domain constants (for hashing/commitments)
-const DOMAIN_CARD  : Bytes<32> = pad(32, "nc:card");
-const DOMAIN_LINK  : Bytes<32> = pad(32, "nc:link");
-const DOMAIN_LEVEL : Bytes<32> = pad(32, "nc:level");
+const DOMAIN_CARD  : Bytes<32> = pad(32, "noircard:card:v1");
+const DOMAIN_LINK  : Bytes<32> = pad(32, "noircard:link:v1");
+const DOMAIN_LEVEL : Bytes<32> = pad(32, "noircard:level:v1");
 
 // Public types
-export enum CardState { INACTIVE, ACTIVE }
+enum CardState { INACTIVE, ACTIVE }
 
 // Public on-chain state (minimal public metadata)
 // round: epoch counter (lets you rotate identities over time if desired)
@@ -109,7 +109,7 @@ export circuit createCard(
   const contactCommitment = persistentCommit<Vector<2, Bytes<32>>>([ contactCiphertext, r ]);
   insert(contact_commit, (cardId, contactCommitment));
 
-  return cardId;
+  return disclose(cardId);
 }
 
 // Public: add a reveal level commitment (progressive disclosure)
@@ -141,7 +141,7 @@ export circuit generateLink(cardId: Bytes<32>, createdAt: Uint<64>, ttl: Uint<64
   insert(links, linkId);
   insert(link_meta, (linkId, cardId, aid, createdAt, expiresAt, false, 0u8));
 
-  return linkId;
+  return disclose(linkId);
 }
 
 // Public: access next level by proving membership of the level commit
@@ -165,7 +165,7 @@ export circuit accessNextLevel(
   remove(link_meta, linkId);
   insert(link_meta, (linkId, cId, link_recipient_id, createdAt, expiresAt, revoked, nextLevel));
 
-  return levelCiphertext;
+  return disclose(levelCiphertext);
 }
 
 // Public: revoke a link (admin-only)

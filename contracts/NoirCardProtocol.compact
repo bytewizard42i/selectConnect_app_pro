@@ -42,7 +42,7 @@ const DOMAIN_BOND       : Bytes<32> = pad(32, "noircard:bond:v1");
 const DOMAIN_CONTACT    : Bytes<32> = pad(32, "noircard:contact:v1");
 
 // Card lifecycle states
-export enum CardState { 
+enum CardState { 
     UNSET,      // Never created
     ACTIVE,     // Normal operation
     SUSPENDED,  // Temporarily disabled (can be reactivated)
@@ -50,14 +50,14 @@ export enum CardState {
 }
 
 // Credential states for rescindable credentials
-export enum CredentialState {
+enum CredentialState {
     NONE,       // No credential issued
     ISSUED,     // Active credential
     REVOKED     // Credential has been rescinded
 }
 
 // Bond states for abuse prevention
-export enum BondState {
+enum BondState {
     POSTED,     // Bond is active
     REFUNDED,   // Bond returned to sender
     SLASHED     // Bond confiscated due to abuse
@@ -224,9 +224,9 @@ circuit generateBondId(cardId: Bytes<32>, senderCommit: Bytes<32>, timestamp: Ui
 
 // Convert Uint<64> to Bytes<32>
 circuit toBytes32(value: Uint<64>): Bytes<32> {
-    // Implementation would convert the uint to bytes representation
-    // This is a placeholder - actual implementation depends on Compact stdlib
-    return pad(32, "") as Bytes<32>; // Simplified
+    // Use proper conversion from uint to bytes
+    let bytes = toBytes(value);
+    return pad(32, bytes) as Bytes<32>;
 }
 
 // Verify admin authorization for a card
@@ -272,7 +272,7 @@ circuit toUint64(value: Uint<32>): Uint<64> {
 // @param defaultTTL - Default time-to-live for bonds/links
 // @param phoneCommit - Commitment to pseudonymous phone
 // @param emailCommit - Commitment to pseudonymous email
-// @return cardId - The generated card ID
+//    return disclose(cardId); - The generated card ID
 export circuit createCard(
     aliasHash: Bytes<32>,
     requiresBond: Bool,

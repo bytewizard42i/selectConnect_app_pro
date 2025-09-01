@@ -45,7 +45,8 @@ witness adminSecret(): Bytes<32>;
 witness rand(): Bytes<32>;
 
 // Domain constants (align with NoirCard)
-const DOMAIN_CARD  : Bytes<32> = pad(32, "nc:card");
+const DOMAIN_CARD  : Bytes<32> = pad(32, "noircard:card:v1");
+const DOMAIN_BOND  : Bytes<32> = pad(32, "noircard:bond:v1");
 
 // Helper: derive adminId from epoch-bound secret (aligned with NoirCard)
 // The admin proves control via a secret; we derive a stable public identifier from it and the current epoch.
@@ -94,7 +95,7 @@ export circuit postBond(
   remove(sender_rep, senderCommit);
   insert(sender_rep, (senderCommit, total + 1u32, slashedCount, lastSlash, totalSlashed));
 
-  return bondId;
+  return disclose(bondId);
 }
 
 // Refund bond (called by recipient engagement or TTL expiry)
