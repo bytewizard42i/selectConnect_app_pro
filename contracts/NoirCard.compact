@@ -31,19 +31,19 @@ export ledger round: Counter;                                          // epoch 
 // cards: set of all card IDs that exist
 export ledger cards: Set<Bytes<32>>;                                   // cardId
 // card_state: stores whether each card is ACTIVE or INACTIVE
-export ledger card_state: Set<(Bytes<32>, CardState)>;                 // (cardId, state)
+export ledger card_state: Map<Bytes<32>, CardState>;                   // cardId -> state
 // card_admin: binds a card to an administrator identifier (Bytes<32>) derived from a secret witness
-export ledger card_admin: Set<(Bytes<32>, Bytes<32>)>;                 // (cardId, adminId)
+export ledger card_admin: Map<Bytes<32>, Bytes<32>>;                   // cardId -> adminId
 // card_policy: public policy metadata (e.g., whether an abuse bond is required, default amounts)
-export ledger card_policy: Set<(Bytes<32>, Bool, Uint<64>, Uint<64>)>; // (cardId, requiresBond, bondAmount, revealDelay)
+export ledger card_policy: Map<Bytes<32>, (Boolean, Uint<64>, Uint<64>)>; // cardId -> (requiresBond, bondAmount, revealDelay)
 // contact_commit: commitment to your contact info ciphertext (actual data held off-chain)
-export ledger contact_commit: Set<(Bytes<32>, Bytes<32>)>;             // (cardId, contactCommitment)
+export ledger contact_commit: Map<Bytes<32>, Bytes<32>>;               // cardId -> contactCommitment
 // reveal_tree: Merkle tree accumulating commitments for progressive reveal levels
-export ledger reveal_tree: MerkleTree;                                 // commitments of reveal levels
+export ledger reveal_tree: MerkleTree<10, Bytes<32>>;                  // commitments of reveal levels
 // links: set of generated access link IDs
 export ledger links: Set<Bytes<32>>;                                   // linkId
 // link_meta: metadata for links: which card, recipient, when created/expires, revoked?, current reveal level index
-export ledger link_meta: Set<(Bytes<32>, Bytes<32>, Bytes<32>, Uint<64>, Uint<64>, Bool, Uint<8>)>; // (linkId, cardId, link_recipient_id, createdAt, expiresAt, revoked, currentLevel)
+export ledger link_meta: Map<Bytes<32>, (Bytes<32>, Bytes<32>, Uint<64>, Uint<64>, Boolean, Uint<8>)>; // linkId -> (cardId, link_recipient_id, createdAt, expiresAt, revoked, currentLevel)
 
 // Initialize epoch on deploy
 constructor() {
@@ -100,14 +100,14 @@ export circuit createCard(
   assert(!contains(cards, cardId), "card exists");
 
   insert(cards, cardId);
-  insert(card_admin, (cardId, aid_admin));
-  insert(card_state, (cardId, CardState.ACTIVE));
-  insert(card_policy, (cardId, requiresBond, bondAmount, revealDelay));
+  insert(card_admin, cardId, aid_admin);
+  insert(card_state, cardId, CardState.ACTIVE);
+  insert(card_policy, cardId, (requiresBond, bondAmount, revealDelay));
 
   // Commit contact data
   const r = rand();
   const contactCommitment = persistentCommit<Vector<2, Bytes<32>>>([ contactCiphertext, r ]);
-  insert(contact_commit, (cardId, contactCommitment));
+  insert(contact_commit, cardId, contactCommitment);
 
   return disclose(cardId);
 }
@@ -118,7 +118,8 @@ export circuit createCard(
 //  - We append commitments in a Merkle tree so later users can prove inclusion.
 export circuit addRevealLevel(cardId: Bytes<32>, levelCiphertext: Bytes<32>): [] {
   assert(contains(cards, cardId), "missing card");
-  assert(contains(card_state, (cardId, CardState.ACTIVE)), "inactive");
+  let cardState = get(card_state, cardId);
+  assert(cardState == CardState.ACTIVE, "inactive");
 
   const lr = rand();
   const levelCommit = persistentCommit<Vector<3, Bytes<32>>>([ DOMAIN_LEVEL, levelCiphertext, lr ]);
@@ -130,7 +131,8 @@ export circuit addRevealLevel(cardId: Bytes<32>, levelCiphertext: Bytes<32>): []
 // The link stores only meta (createdAt, expiresAt, revoked flag, and current reveal level index).
 export circuit generateLink(cardId: Bytes<32>, createdAt: Uint<64>, ttl: Uint<64>): Bytes<32> {
   assert(contains(cards, cardId), "missing card");
-  assert(contains(card_state, (cardId, CardState.ACTIVE)), "inactive");
+  let cardState = get(card_state, cardId);
+  assert(cardState == CardState.ACTIVE, "inactive");
 
   const ask = accessorSecret();
   const aid = accessorId(round, ask);
@@ -139,7 +141,7 @@ export circuit generateLink(cardId: Bytes<32>, createdAt: Uint<64>, ttl: Uint<64
   const expiresAt = createdAt + ttl;
 
   insert(links, linkId);
-  insert(link_meta, (linkId, cardId, aid, createdAt, expiresAt, false, 0u8));
+  insert(link_meta, linkId, (cardId, aid, createdAt, expiresAt, false, 0u8));
 
   return disclose(linkId);
 }
@@ -152,8 +154,7 @@ export circuit accessNextLevel(
   nowTs: Uint<64>,
   levelCiphertext: Bytes<32>
 ): Bytes<32> {
-  let (lId, cId, link_recipient_id, createdAt, expiresAt, revoked, currentLevel) = get(link_meta, linkId);
-  assert(lId == linkId, "bad link");
+  let (cId, link_recipient_id, createdAt, expiresAt, revoked, currentLevel) = get(link_meta, linkId);
   assert(!revoked, "revoked");
   assert(nowTs < expiresAt, "expired");
 
@@ -163,7 +164,7 @@ export circuit accessNextLevel(
 
   const nextLevel = currentLevel + 1u8;
   remove(link_meta, linkId);
-  insert(link_meta, (linkId, cId, link_recipient_id, createdAt, expiresAt, revoked, nextLevel));
+  insert(link_meta, linkId, (cId, link_recipient_id, createdAt, expiresAt, revoked, nextLevel));
 
   return disclose(levelCiphertext);
 }
@@ -173,13 +174,14 @@ export circuit accessNextLevel(
 export circuit revokeLink(cardId: Bytes<32>, linkId: Bytes<32>): [] {
   const sk = adminSecret();
   const aid_admin = adminId(round, sk);
-  assert(contains(card_admin, (cardId, aid_admin)), "not admin");
+  let storedAdmin = get(card_admin, cardId);
+  assert(storedAdmin == aid_admin, "not admin");
 
-  let (lId, cId, link_recipient_id, createdAt, expiresAt, _revoked, currentLevel) = get(link_meta, linkId);
-  assert(lId == linkId && cId == cardId, "mismatch");
+  let (cId, link_recipient_id, createdAt, expiresAt, _revoked, currentLevel) = get(link_meta, linkId);
+  assert(cId == cardId, "mismatch");
 
   remove(link_meta, linkId);
-  insert(link_meta, (linkId, cId, link_recipient_id, createdAt, expiresAt, true, currentLevel));
+  insert(link_meta, linkId, (cId, link_recipient_id, createdAt, expiresAt, true, currentLevel));
 }
 
 // Public: deactivate card (admin-only)
@@ -187,8 +189,9 @@ export circuit revokeLink(cardId: Bytes<32>, linkId: Bytes<32>): [] {
 export circuit deactivateCard(cardId: Bytes<32>): [] {
   const sk = adminSecret();
   const aid_admin = adminId(round, sk);
-  assert(contains(card_admin, (cardId, aid_admin)), "not admin");
+  let storedAdmin = get(card_admin, cardId);
+  assert(storedAdmin == aid_admin, "not admin");
 
-  remove(card_state, (cardId, CardState.ACTIVE));
-  insert(card_state, (cardId, CardState.INACTIVE));
+  remove(card_state, cardId);
+  insert(card_state, cardId, CardState.INACTIVE);
 }

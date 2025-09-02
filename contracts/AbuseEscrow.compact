@@ -25,15 +25,15 @@ export ledger round: Counter; // epoch counter for rotating auth if desired
 // bonds: set of bond IDs that exist
 export ledger bonds: Set<Bytes<32>>;                                         // bondId
 // bond_meta: details for each bondId
-export ledger bond_meta: Set<(Bytes<32>, Bytes<32>, Bytes<32>, Uint<64>, Uint<64>, Bool, Bool)>; // (bondId, cardId, senderCommit, amount, expiresAt, refunded, slashed)
+export ledger bond_meta: Map<Bytes<32>, (Bytes<32>, Bytes<32>, Uint<64>, Uint<64>, Boolean, Boolean)>; // bondId -> (cardId, senderCommit, amount, expiresAt, refunded, slashed)
 // safety_pool: per-card slashed balance accumulator
-export ledger safety_pool: Set<(Bytes<32>, Uint<64>)>;                        // (cardId, balance)
+export ledger safety_pool: Map<Bytes<32>, Uint<64>>;                          // cardId -> balance
 // sender_rep: coarse reputation counters keyed by sender commitment (not PII)
-export ledger sender_rep: Set<(Bytes<32>, Uint<32>, Uint<32>, Uint<64>, Uint<64>)>; // (senderCommit, totalBonds, slashedCount, lastSlashTime, totalSlashed)
+export ledger sender_rep: Map<Bytes<32>, (Uint<32>, Uint<32>, Uint<64>, Uint<64>)>; // senderCommit -> (totalBonds, slashedCount, lastSlashTime, totalSlashed)
 // bond_config: per-card configuration for minimums/TTLs and dynamic pricing
-export ledger bond_config: Set<(Bytes<32>, Uint<64>, Uint<64>, Bool, Uint<64>)>;     // (cardId, minBondAmount, defaultTTL, dynamicPricing, riskMultiplier)
+export ledger bond_config: Map<Bytes<32>, (Uint<64>, Uint<64>, Boolean, Uint<64>)>;   // cardId -> (minBondAmount, defaultTTL, dynamicPricing, riskMultiplier)
 // card_owner: pair linking a card to an owner identifier (Bytes<32>), used for authorization
-export ledger card_admin: Set<(Bytes<32>, Bytes<32>)>;                         // (cardId, adminId)
+export ledger card_admin: Map<Bytes<32>, Bytes<32>>;                           // cardId -> adminId
 
 // Constructor initializes epoch
 constructor() {
@@ -56,9 +56,9 @@ circuit adminId(round: Field, sk: Bytes<32>): Bytes<32> {
 
 // Helper: calculate dynamic required bond amount
 // If dynamicPricing is enabled, increase the minimum bond based on historical slashes for this senderCommit.
-circuit calcRequired(minBond: Uint<64>, dynPricing: Bool, riskMult: Uint<64>, senderCommit: Bytes<32>): Uint<64> {
+circuit calcRequired(minBond: Uint<64>, dynPricing: Boolean, riskMult: Uint<64>, senderCommit: Bytes<32>): Uint<64> {
   if (!dynPricing) { return minBond }
-  let (sc, total, slashedCount, _lastSlash, _totalSlashed) = getOrDefault(sender_rep, senderCommit, (senderCommit, 0u32, 0u32, 0u64, 0u64));
+  let (total, slashedCount, _lastSlash, _totalSlashed) = getOrDefault(sender_rep, senderCommit, (0u32, 0u32, 0u64, 0u64));
   if (slashedCount == 0u32) { return minBond }
   let multiplierBp = 10000u64 + (toUint64(slashedCount) * riskMult);
   return (minBond * multiplierBp) / 10000u64;
@@ -80,20 +80,20 @@ export circuit postBond(
   nowTs: Uint<64>,
   ttl: Uint<64>
 ): Bytes<32> {
-  let (cfgCard, minBond, defTTL, dynPricing, riskMult) = getOrDefault(bond_config, cardId, (cardId, 0u64, 0u64, false, 0u64));
+  let (minBond, defTTL, dynPricing, riskMult) = getOrDefault(bond_config, cardId, (0u64, 0u64, false, 0u64));
   let requiredAmount = calcRequired(minBond, dynPricing, riskMult, senderCommit);
   assert(amount >= requiredAmount, "insufficient amount");
 
   let expiry = nowTs + (if ttl > 0u64 { ttl } else { defTTL });
-  let bondId = persistentHash<Vector<3, Bytes<32>>>([ cardId, senderCommit, toBytes32(nowTs) ]);
+  let bondId = persistentHash<Vector<3, Bytes<32>>>([ DOMAIN_BOND, cardId, senderCommit ]);
 
   insert(bonds, bondId);
-  insert(bond_meta, (bondId, cardId, senderCommit, amount, expiry, false, false));
+  insert(bond_meta, bondId, (cardId, senderCommit, amount, expiry, false, false));
 
   // Update sender reputation
-  let (sc, total, slashedCount, lastSlash, totalSlashed) = getOrDefault(sender_rep, senderCommit, (senderCommit, 0u32, 0u32, 0u64, 0u64));
+  let (total, slashedCount, lastSlash, totalSlashed) = getOrDefault(sender_rep, senderCommit, (0u32, 0u32, 0u64, 0u64));
   remove(sender_rep, senderCommit);
-  insert(sender_rep, (senderCommit, total + 1u32, slashedCount, lastSlash, totalSlashed));
+  insert(sender_rep, senderCommit, (total + 1u32, slashedCount, lastSlash, totalSlashed));
 
   return disclose(bondId);
 }
@@ -105,15 +105,14 @@ export circuit postBond(
 export circuit refundBond(
   bondId: Bytes<32>,
   nowTs: Uint<64>,
-  authorizerIsAdmin: Bool
+  authorizerIsAdmin: Boolean
 ): [] {
-  let (bId, cId, sCommit, amount, expiresAt, refunded, slashed) = get(bond_meta, bondId);
-  assert(bId == bondId, "not found");
+  let (cId, sCommit, amount, expiresAt, refunded, slashed) = get(bond_meta, bondId);
   assert(!refunded && !slashed, "already processed");
   assert(nowTs >= expiresAt || authorizerIsAdmin, "not authorized or not expired");
 
   remove(bond_meta, bondId);
-  insert(bond_meta, (bondId, cId, sCommit, amount, expiresAt, true, slashed));
+  insert(bond_meta, bondId, (cId, sCommit, amount, expiresAt, true, slashed));
 }
 
 // Slash bond on abuse attestation (admin-only)
@@ -130,25 +129,26 @@ export circuit slashBond(
 ): [] {
   const sk = adminSecret();
   const aid = adminId(round, sk);
-  assert(contains(card_admin, (cardId, aid)), "not admin");
+  let storedAdmin = get(card_admin, cardId);
+  assert(storedAdmin == aid, "not admin");
 
-  let (bId, cId, sCommit, amount, expiresAt, refunded, slashed) = get(bond_meta, bondId);
-  assert(bId == bondId && cId == cardId, "bond/card mismatch");
+  let (cId, sCommit, amount, expiresAt, refunded, slashed) = get(bond_meta, bondId);
+  assert(cId == cardId, "bond/card mismatch");
   assert(!refunded && !slashed, "already processed");
 
   remove(bond_meta, bondId);
-  insert(bond_meta, (bondId, cId, sCommit, amount, expiresAt, refunded, true));
+  insert(bond_meta, bondId, (cId, sCommit, amount, expiresAt, refunded, true));
 
   // Update sender reputation
-  let (sc, total, scount, lastSlash, totalSlashed) = getOrDefault(sender_rep, sCommit, (sCommit, 0u32, 0u32, 0u64, 0u64));
+  let (total, scount, lastSlash, totalSlashed) = getOrDefault(sender_rep, sCommit, (0u32, 0u32, 0u64, 0u64));
   remove(sender_rep, sCommit);
-  insert(sender_rep, (sCommit, total, scount + 1u32, nowTs, totalSlashed + amount));
+  insert(sender_rep, sCommit, (total, scount + 1u32, nowTs, totalSlashed + amount));
 
   // Safety pool receives half
   let half = amount / 2u64;
-  let (poolCard, bal) = getOrDefault(safety_pool, cardId, (cardId, 0u64));
+  let bal = getOrDefault(safety_pool, cardId, 0u64);
   remove(safety_pool, cardId);
-  insert(safety_pool, (cardId, bal + half));
+  insert(safety_pool, cardId, bal + half);
 }
 
 // Configure bond parameters for a card (admin-only)
@@ -161,17 +161,18 @@ export circuit configureBond(
   cardId: Bytes<32>,
   minBondAmount: Uint<64>,
   defaultTTL: Uint<64>,
-  dynamicPricing: Bool,
+  dynamicPricing: Boolean,
   riskMultiplier: Uint<64>
 ): [] {
   const sk = adminSecret();
   const aid = adminId(round, sk);
-  assert(contains(card_admin, (cardId, aid)), "not admin");
+  let storedAdmin = get(card_admin, cardId);
+  assert(storedAdmin == aid, "not admin");
 
   if (contains(bond_config, cardId)) {
     remove(bond_config, cardId);
   }
-  insert(bond_config, (cardId, minBondAmount, defaultTTL, dynamicPricing, riskMultiplier));
+  insert(bond_config, cardId, (minBondAmount, defaultTTL, dynamicPricing, riskMultiplier));
 }
 
 // Register or update the admin mapping for a card (called by admin)
@@ -179,12 +180,14 @@ export circuit configureBond(
 export circuit registerCardAdmin(cardId: Bytes<32>): [] {
   const sk = adminSecret();
   const aid = adminId(round, sk);
-  if (contains(card_admin, (cardId, aid))) {
-    // already registered for this admin; no-op
-    return;
+  if (contains(card_admin, cardId)) {
+    let storedAdmin = get(card_admin, cardId);
+    if (storedAdmin == aid) {
+      // already registered for this admin; no-op
+      return;
+    }
+    // Remove previous admin mapping
+    remove(card_admin, cardId);
   }
-  // Remove any previous admin mapping for this card if present
-  // Note: Compact sets are keyed by full tuple; emulate replace by allowing multiple entries or by prior knowledge.
-  // Here we simply insert (supports multiple epochs/admin rotations). Downstream checks require exact (cardId, aid).
-  insert(card_admin, (cardId, aid));
+  insert(card_admin, cardId, aid);
 }
