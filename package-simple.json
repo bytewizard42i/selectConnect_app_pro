@@ -1,0 +1,16 @@
+{
+  "name": "noircard-demo",
+  "version": "1.0.0",
+  "description": "NoirCard Demo - Privacy-first business cards with QR codes",
+  "main": "demo-server.js",
+  "scripts": {
+    "demo": "node demo-server.js",
+    "start": "node demo-server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "qrcode": "^1.5.0",
+    "crypto": "^1.0.1",
+    "redis": "^4.6.0"
+  }
+}

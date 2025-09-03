@@ -65,5 +65,17 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "directories": {
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bytewizard42i/NoirCard_me.git"
+  },
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/bytewizard42i/NoirCard_me/issues"
+  },
+  "homepage": "https://github.com/bytewizard42i/NoirCard_me#readme"
 }
