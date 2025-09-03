@@ -1,7 +1,6 @@
 const express = require('express');
 const QRCode = require('qrcode');
 const crypto = require('crypto');
-const redis = require('redis');
 const path = require('path');
 
 const app = express();

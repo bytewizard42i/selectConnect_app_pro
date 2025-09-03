@@ -1,0 +1,13 @@
+{
+  "name": "noircard-demo",
+  "version": "1.0.0",
+  "description": "NoirCard Demo - Privacy-first business cards",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "qrcode": "^1.5.0"
+  }
+}
