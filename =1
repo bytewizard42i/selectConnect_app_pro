@@ -1,0 +1,8 @@
+--- ~/.bashrc (relevant lines) ---
+118:# CASCADE_DEFAULTS_START
+126:# CASCADE_DEFAULTS_END
+132:. "$HOME/.local/bin/env"
+133:# CASCADE_COMPACT_PATH_START
+135:[ -s "/home/js/.local/bin/env" ] && . "/home/js/.local/bin/env"
+136:# CASCADE_COMPACT_PATH_END
+\n--- Show surrounding context ---
