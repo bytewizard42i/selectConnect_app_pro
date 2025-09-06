@@ -4,16 +4,16 @@
  */
 
 import { MidnightProvider } from '@midnight-ntwrk/midnight-js-sdk';
-import { NoirCardProtocol } from '../../contracts/build/NoirCardProtocol';
+import { SelectConnectProtocol } from '../../contracts/build/SelectConnectProtocol';
 import { expect } from 'chai';
 
 describe('Enterprise Sales with NoirCard', () => {
-    let contract: NoirCardProtocol;
+    let contract: SelectConnectProtocol;
     let provider: MidnightProvider;
     
     beforeEach(async () => {
         provider = new MidnightProvider('ws://localhost:9944');
-        contract = new NoirCardProtocol(provider);
+        contract = new SelectConnectProtocol(provider);
     });
     
     describe('C-Level Executive Protection', () => {

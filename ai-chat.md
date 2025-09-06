@@ -66,7 +66,7 @@ An **abuse bond** is a **small, refundable deposit** that a sender must post bef
 ### Implementation Phase
 *[Cascade implemented the complete system including:]*
 
-1. **NoirCard.compact** - Main business card contract with:
+1. **SelectConnect.compact** - Main business card contract with:
    - Progressive contact reveal (name → email → phone)
    - QR-based sharing with revocable links
    - Timed policies and expiration
@@ -135,7 +135,7 @@ An **abuse bond** is a **small, refundable deposit** that a sender must post bef
 **Problem**: Contracts using outdated Compact syntax
 **Solution**: Complete upgrade to Compact v0.16.0 standards
 
-**NoirCard.compact Improvements**:
+**SelectConnect.compact Improvements**:
 - ✅ **Circuit architecture** → `circuit NoirCard` with proper state management
 - ✅ **Modern data types** → Bytes32, U64, Bool, Address, String
 - ✅ **Function syntax** → `@public fn` with proper return types

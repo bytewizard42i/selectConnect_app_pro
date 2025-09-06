@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ============================================================================
-// NoirCard Protocol - Privacy-Preserving Business Cards with Abuse Prevention
+// SelectConnect Protocol - Privacy-Preserving Business Cards with Abuse Prevention
 // ============================================================================
 // Version: 1.0.0
 // Compact Language Version: 0.16
@@ -34,12 +34,12 @@ import CompactStandardLibrary;
 // ============================================================================
 
 // Domain tags for cryptographic operations (prevents cross-domain attacks)
-const DOMAIN_CARD       : Bytes<32> = pad(32, "noircard:card:v1");
-const DOMAIN_LINK       : Bytes<32> = pad(32, "noircard:link:v1");
-const DOMAIN_LEVEL      : Bytes<32> = pad(32, "noircard:level:v1");
-const DOMAIN_CREDENTIAL : Bytes<32> = pad(32, "noircard:cred:v1");
-const DOMAIN_BOND       : Bytes<32> = pad(32, "noircard:bond:v1");
-const DOMAIN_CONTACT    : Bytes<32> = pad(32, "noircard:contact:v1");
+const DOMAIN_CARD       : Bytes<32> = pad(32, "selectconnect:card:v1");
+const DOMAIN_LINK       : Bytes<32> = pad(32, "selectconnect:link:v1");
+const DOMAIN_LEVEL      : Bytes<32> = pad(32, "selectconnect:level:v1");
+const DOMAIN_CREDENTIAL : Bytes<32> = pad(32, "selectconnect:cred:v1");
+const DOMAIN_BOND       : Bytes<32> = pad(32, "selectconnect:bond:v1");
+const DOMAIN_CONTACT    : Bytes<32> = pad(32, "selectconnect:contact:v1");
 
 // Card lifecycle states
 enum CardState { 
@@ -266,7 +266,7 @@ circuit toUint64(value: Uint<32>): Uint<64> {
 // CARD MANAGEMENT CIRCUITS
 // ============================================================================
 
-// Create a new NoirCard with privacy-preserving features
+// Create a new SelectConnect card with privacy-preserving features
 // @param aliasHash - Hash of the card alias/handle (non-PII)
 // @param requiresBond - Whether senders must post bonds
 // @param minBondAmount - Minimum bond amount required

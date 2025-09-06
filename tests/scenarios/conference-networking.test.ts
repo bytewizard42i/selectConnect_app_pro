@@ -1,27 +1,27 @@
 /**
- * NoirCard Test Scenario: Conference Networking
+ * SelectConnect Test Scenario: Conference Networking
  * Demonstrates privacy-preserving professional networking at tech conferences
  */
 
 import { MidnightProvider, generateProof, verifyProof } from '@midnight-ntwrk/midnight-js-sdk';
-import { NoirCardProtocol } from '../../contracts/build/NoirCardProtocol';
+import { SelectConnectProtocol } from '../../contracts/build/SelectConnectProtocol';
 import { expect } from 'chai';
 
-describe('Conference Networking with NoirCard', () => {
-    let contract: NoirCardProtocol;
+describe('Conference Networking with SelectConnect', () => {
+    let contract: SelectConnectProtocol;
     let provider: MidnightProvider;
     
     beforeEach(async () => {
         // Connect to local Midnight node
         provider = new MidnightProvider('ws://localhost:9944');
-        contract = new NoirCardProtocol(provider);
+        contract = new SelectConnectProtocol(provider);
     });
     
     describe('Scenario 1: Safe Professional Connection', () => {
         it('should enable Sarah to safely network at DevCon 2025', async () => {
-            console.log('🎯 Testing: Sarah creates a conference-specific NoirCard');
+            console.log('🎯 Testing: Sarah creates a conference-specific SelectConnect card');
             
-            // Step 1: Sarah creates her NoirCard with privacy settings
+            // Step 1: Sarah creates her SelectConnect card with privacy settings
             const sarahCard = await contract.createCard({
                 aliasHash: hash('Sarah@DevCon2025'),
                 requiresBond: true,

@@ -17,7 +17,7 @@ services:
       - ./contracts/build:/circuits  # Mount compiled circuits
       - midnight-proof-cache:/cache
     networks:
-      - noircard-network
+      - selectconnect-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6301/health"]
       interval: 30s
@@ -42,7 +42,7 @@ services:
     volumes:
       - midnight-chain-data:/data
     networks:
-      - noircard-network
+      - selectconnect-network
     command: [
       "--dev",
       "--rpc-external",
@@ -55,14 +55,14 @@ services:
   # Redis for Relay Service
   redis:
     image: redis:7.4-alpine
-    container_name: noircard-redis
+    container_name: selectconnect-redis
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
     networks:
-      - noircard-network
-    command: redis-server --appendonly yes --requirepass noircard_redis_2024
+      - selectconnect-network
+    command: redis-server --appendonly yes --requirepass selectconnect_redis_2024
     healthcheck:
       test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
       interval: 30s
@@ -72,17 +72,17 @@ services:
   # Bull Dashboard for Job Monitoring
   bull-board:
     image: deadly0/bull-board:latest
-    container_name: noircard-bull-board
+    container_name: selectconnect-bull-board
     ports:
       - "3002:3000"
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=noircard_redis_2024
+      - REDIS_PASSWORD=selectconnect_redis_2024
     depends_on:
       - redis
     networks:
-      - noircard-network
+      - selectconnect-network
 
 volumes:
   midnight-proof-cache:
@@ -90,5 +90,5 @@ volumes:
   redis-data:
 
 networks:
-  noircard-network:
+  selectconnect-network:
     driver: bridge

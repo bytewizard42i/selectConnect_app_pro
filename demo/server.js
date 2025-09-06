@@ -16,8 +16,8 @@ const bonds = new Map();
 
 // Using in-memory storage for demo (Redis removed for simplicity)
 
-// Mock NoirCard Protocol functions
-class NoirCardProtocol {
+// Import SelectConnectProtocol contract (when available)
+class SelectConnectProtocol {
   static createCard(aliasHash, requiresBond, minBondAmount, phoneCommit, emailCommit) {
     const cardId = crypto.randomUUID();
     const card = {
@@ -213,7 +213,7 @@ app.post('/api/create-card', async (req, res) => {
   const emailCommit = crypto.createHash('sha256').update(email + 'salt').digest('hex');
   const aliasHash = crypto.createHash('sha256').update(name).digest('hex');
   
-  const cardId = NoirCardProtocol.createCard(
+  const cardId = SelectConnectProtocol.createCard(
     aliasHash, 
     true, 
     parseFloat(bondAmount), 
@@ -241,7 +241,7 @@ app.post('/api/create-card', async (req, res) => {
 app.post('/api/post-bond', (req, res) => {
   const { cardId, amount } = req.body;
   
-  const card = NoirCardProtocol.getCard(cardId);
+  const card = SelectConnectProtocol.getCard(cardId);
   if (!card) {
     return res.json({ success: false, message: 'Card not found' });
   }
@@ -256,7 +256,7 @@ app.post('/api/post-bond', (req, res) => {
   // Create sender commitment (mock)
   const senderCommit = crypto.createHash('sha256').update(cardId + Date.now()).digest('hex');
   
-  const bondId = NoirCardProtocol.postBond(cardId, parseFloat(amount), senderCommit);
+  const bondId = SelectConnectProtocol.postBond(cardId, parseFloat(amount), senderCommit);
   
   res.json({
     success: true,
@@ -268,7 +268,7 @@ app.post('/api/post-bond', (req, res) => {
 });
 
 app.get('/api/card/:cardId', (req, res) => {
-  const card = NoirCardProtocol.getCard(req.params.cardId);
+  const card = SelectConnectProtocol.getCard(req.params.cardId);
   if (!card) {
     return res.status(404).json({ error: 'Card not found' });
   }

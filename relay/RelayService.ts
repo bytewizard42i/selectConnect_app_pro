@@ -17,7 +17,7 @@ import winston from 'winston';
 import * as cron from 'node-cron';
 
 /**
- * NoirCard Relay Service - Production-Ready Implementation
+ * SelectConnect Relay Service - Production-Ready Implementation
  * 
  * This service handles secure message forwarding with abuse bond verification
  * Built for Midnight blockchain with modern best practices:
@@ -27,10 +27,10 @@ import * as cron from 'node-cron';
  * - Secure secret key derivation and management
  * - Encrypted evidence storage
  */
-export class NoirCardRelay {
+export class SelectConnectRelay {
     private midnightProvider: MidnightProvider;
     private abuseEscrowContract: Contract;
-    private noirCardContract: Contract;
+    private selectConnectContract: Contract;
     private relayPrivateKey: string;
     private redis: Redis;
     private bondSlashingQueue: Bull.Queue;
@@ -96,7 +96,7 @@ export class NoirCardRelay {
     private async initializeContracts(abuseEscrowAddress: string, noirCardAddress: string): Promise<void> {
         try {
             this.abuseEscrowContract = await this.midnightProvider.getContract(abuseEscrowAddress);
-            this.noirCardContract = await this.midnightProvider.getContract(noirCardAddress);
+            this.selectConnectContract = await this.midnightProvider.getContract(noirCardAddress);
             this.logger.info('Contracts initialized successfully');
         } catch (error) {
             this.logger.error('Failed to initialize contracts', { error });
@@ -609,7 +609,7 @@ export class NoirCardRelay {
     private async getRequiredBondAmount(cardId: string, senderCommit: string): Promise<string> {
         try {
             const cardPolicy = await this.retryOperation(async () => {
-                return await this.noirCardContract.call('getCardPolicy', [cardId]);
+                return await this.selectConnectContract.call('getCardPolicy', [cardId]);
             });
             return cardPolicy.requiredBondAmount || "1000000";
         } catch (error) {
@@ -696,7 +696,7 @@ export class NoirCardRelay {
     private async deliverToRecipient(messagePayload: MessagePayload): Promise<any> {
         try {
             const preferences = await this.retryOperation(async () => {
-                return await this.noirCardContract.call('getDeliveryPreferences', [messagePayload.cardId]);
+                return await this.selectConnectContract.call('getDeliveryPreferences', [messagePayload.cardId]);
             });
             
             const deliveryResult = await this.sendThroughChannel(messagePayload, preferences.channel);
@@ -748,7 +748,7 @@ export class NoirCardRelay {
     private async verifyAttestorAuthorization(cardId: string, attestor: string): Promise<boolean> {
         try {
             const cardAdmin = await this.retryOperation(async () => {
-                return await this.noirCardContract.call('getCardAdmin', [cardId]);
+                return await this.selectConnectContract.call('getCardAdmin', [cardId]);
             });
             
             if (cardAdmin.toLowerCase() === attestor.toLowerCase()) {
@@ -756,7 +756,7 @@ export class NoirCardRelay {
             }
             
             const isGuardian = await this.retryOperation(async () => {
-                return await this.noirCardContract.call('isAuthorizedGuardian', [cardId, attestor]);
+                return await this.selectConnectContract.call('isAuthorizedGuardian', [cardId, attestor]);
             });
             
             return isGuardian;

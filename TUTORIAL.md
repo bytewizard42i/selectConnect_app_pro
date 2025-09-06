@@ -1,13 +1,13 @@
-# 🃏 NoirCard Protocol: Build Privacy-First Business Cards with Zero-Knowledge Proofs
+# 🃏 SelectConnect Protocol: Build Privacy-First Business Cards with Zero-Knowledge Proofs
 
 ## 🎯 What You'll Build
-In this comprehensive tutorial, you'll create **NoirCard** - a revolutionary privacy-preserving business card system that solves the networking paradox: How do you connect professionally while protecting your personal information from harassment and spam?
+In this comprehensive tutorial, you'll create **SelectConnect** - a revolutionary privacy-preserving business card system that solves the networking paradox: How do you connect professionally while protecting your personal information from harassment and spam?
 
 **Tutorial Duration:** 45 minutes  
 **Skill Level:** Intermediate  
 **Prerequisites:** Basic JavaScript/TypeScript knowledge
 
-## 🚀 Why NoirCard Matters
+## 🚀 Why SelectConnect Matters
 
 ### The Problem
 Every year, millions of professionals face a dilemma:
@@ -15,7 +15,7 @@ Every year, millions of professionals face a dilemma:
 - **Don't share** → Miss valuable connections and opportunities
 
 ### Our Solution
-NoirCard uses Midnight's zero-knowledge proofs to create:
+SelectConnect uses Midnight's zero-knowledge proofs to create:
 - 🔐 **Privacy-preserving contacts** with progressive reveal
 - 💰 **Economic accountability** through abuse bonds
 - 🎭 **Pseudonymous handles** for initial contact
@@ -72,7 +72,7 @@ npm install -g @midnight-ntwrk/compact-compiler@0.16.0
 
 # Compile the NoirCard Protocol contract
 cd contracts/
-midnightc compile NoirCardProtocol.compact --output build/
+midnightc compile SelectConnectProtocol.compact --output build/
 
 # You should see:
 # ✓ Parsing contract...
@@ -185,7 +185,7 @@ describe('Authorization Circuit', () => {
 
 ### Step 4.1: Core Card Creation
 ```typescript
-// contracts/NoirCardProtocol.compact (simplified)
+// contracts/SelectConnectProtocol.compact (simplified)
 
 export circuit createCard(
     aliasHash: Bytes<32>,
@@ -750,7 +750,7 @@ npm run build:contracts
 
 # Deploy to testnet
 midnight-cli deploy \
-  --contract build/NoirCardProtocol.json \
+  --contract build/SelectConnectProtocol.json \
   --network testnet \
   --gas-limit 5000000
 

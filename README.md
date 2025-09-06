@@ -1,4 +1,4 @@
-![SelectConnect](media/SelectConnect-image.png)
+![SelectConnect](media/selectConnect-logo.png)
 
 # 🔗 SelectConnect: Privacy-First Contact Sharing
 
@@ -57,7 +57,7 @@ SelectConnect leverages Midnight's Compact v0.16 to create **22 ZK circuits** th
 
 ### Core Components
 
-1. **NoirCardProtocol.compact** (813 lines)
+1. **SelectConnectProtocol.compact** (813 lines)
    - Unified smart contract with privacy-first design
    - 22 ZK circuits for complete privacy preservation
    - Abuse bond staking with reputation system
@@ -242,7 +242,7 @@ npm run dev
 - **Bond Management**: Easy bond posting and status tracking
 - **Mobile Responsive**: Works seamlessly on all devices
 
-## 🔧 Smart Contract API - Unified NoirCardProtocol
+## 🔧 Smart Contract API - Unified SelectConnectProtocol
 
 ### Card Management (card_admin role)
 

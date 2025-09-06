@@ -5,10 +5,10 @@ pragma language_version 0.16;
 import CompactStandardLibrary;
 
 //==============================================
-// AbuseEscrow (NoirCard) — Compact v0.16 example
+// AbuseEscrow (SelectConnect) — Compact v0.16 example
 // ----------------------------------------------
 // Purpose:
-//  - Require senders to post a refundable "abuse bond" before contacting a NoirCard.
+//  - Require senders to post a refundable "abuse bond" before contacting a SelectConnect.
 //  - Bonds deter spam/abuse. Honest interaction => refund. Abuse => slash the bond.
 // What is public vs private:
 //  - Public: bond IDs, card IDs, amounts, timestamps, minimal reputation counters.
@@ -44,11 +44,11 @@ constructor() {
 witness adminSecret(): Bytes<32>;
 witness rand(): Bytes<32>;
 
-// Domain constants (align with NoirCard)
+// Domain constants (align with SelectConnect)
 const DOMAIN_CARD  : Bytes<32> = pad(32, "noircard:card:v1");
 const DOMAIN_BOND  : Bytes<32> = pad(32, "noircard:bond:v1");
 
-// Helper: derive adminId from epoch-bound secret (aligned with NoirCard)
+// Helper: derive adminId from epoch-bound secret (aligned with SelectConnect)
 // The admin proves control via a secret; we derive a stable public identifier from it and the current epoch.
 circuit adminId(round: Field, sk: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<3, Bytes<32>>>([ DOMAIN_CARD, (round as Bytes<32>), sk ]);
@@ -64,9 +64,9 @@ circuit calcRequired(minBond: Uint<64>, dynPricing: Boolean, riskMult: Uint<64>,
   return (minBond * multiplierBp) / 10000u64;
 }
 
-// Post a bond to contact a NoirCard
+// Post a bond to contact a SelectConnect
 // Inputs:
-//  - cardId: target NoirCard ID
+//  - cardId: target SelectConnect ID
 //  - senderCommit: commitment to sender identity (keeps sender private)
 //  - amount: posted amount (must meet required threshold)
 //  - nowTs, ttl: timestamps for expiry

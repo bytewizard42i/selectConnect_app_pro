@@ -1,4 +1,4 @@
-# 🏆 NoirCard - Midnight Network "Privacy First" Challenge Submission
+# 🏆 SelectConnect - Midnight Network "Privacy First" Challenge Submission
 
 ## 📋 Submission Checklist
 
@@ -40,8 +40,8 @@
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/bytewizard42i/NoirCard.git
-cd NoirCard/NoirCard_me
+git clone https://github.com/bytewizard42i/SelectConnect.git
+cd SelectConnect/SelectConnect_me
 
 # 2. Run automated setup
 ./start-hackathon-demo.sh
@@ -54,11 +54,11 @@ cd NoirCard/NoirCard_me
 ## 📂 Repository Structure
 
 ```
-NoirCard_me/
+SelectConnect_me/
 ├── contracts/               # Midnight Compact smart contracts
-│   └── NoirCardProtocol.compact (813 lines, 22 circuits)
+│   └── SelectConnectProtocol.compact (813 lines, 22 circuits)
 ├── frontend/               # React UI with QR codes
-│   └── NoirCardApp.tsx
+│   └── SelectConnectApp.tsx
 ├── relay/                  # Privacy-preserving relay service
 │   └── RelayService.ts
 ├── tests/scenarios/        # Comprehensive test scenarios
@@ -102,7 +102,7 @@ NoirCard_me/
 ## 🔍 Judging Scenarios
 
 ### Demo 1: Conference Safety (5 min)
-1. Create NoirCard with 3-token bond
+1. Create SelectConnect with 3-token bond
 2. Scan QR → Post bond → Send message
 3. Grant progressive access levels
 4. Bond auto-refunds after good interaction
@@ -119,7 +119,7 @@ NoirCard_me/
 3. Qualified pitch → Meeting granted
 4. Successful deal → Reputation boost
 
-## 🏆 Why NoirCard Wins
+## 🏆 Why SelectConnect Wins
 
 ### Innovation (30 points)
 - **First** to solve privacy/accountability paradox
@@ -147,7 +147,7 @@ NoirCard_me/
 
 ## 🌟 Impact Statement
 
-NoirCard transforms how 500M+ professionals network annually by:
+SelectConnect transforms how 500M+ professionals network annually by:
 - **Eliminating** 60% harassment rate for women
 - **Preventing** $2.1B in spam losses
 - **Enabling** safe dating for millions
@@ -156,7 +156,7 @@ NoirCard transforms how 500M+ professionals network annually by:
 ## 📞 Contact
 
 **Team**: ByteWizard42i  
-**GitHub**: https://github.com/bytewizard42i/NoirCard  
+**GitHub**: https://github.com/bytewizard42i/SelectConnect  
 **Demo**: https://noircard.io  
 **Email**: noircard@midnight.network  
 
@@ -171,4 +171,4 @@ Built with ❤️ using:
 
 **"Where Privacy Meets Accountability"** 🃏🔒⚖️
 
-*Thank you for considering NoirCard for the Midnight Network "Privacy First" Challenge!*
+*Thank you for considering SelectConnect for the Midnight Network "Privacy First" Challenge!*

@@ -1,8 +1,8 @@
-# 📋 NoirCard Protocol - Deployment & Testing Instructions
+# 📋 SelectConnect Protocol - Deployment & Testing Instructions
 
 ## 🎯 Overview
 
-This document provides comprehensive deployment instructions for the NoirCard Protocol, a unified privacy-preserving business card system with integrated abuse prevention built on Midnight's Compact v0.16.
+This document provides comprehensive deployment instructions for the SelectConnect Protocol, a unified privacy-preserving business card system with integrated abuse prevention built on Midnight's Compact v0.16.
 
 ## 📦 Prerequisites
 
@@ -22,8 +22,8 @@ This document provides comprehensive deployment instructions for the NoirCard Pr
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/bytewizard42i/NoirCard_me.git
-cd NoirCard_me
+git clone https://github.com/bytewizard42i/SelectConnect_me.git
+cd SelectConnect_me
 ```
 
 ### 2. Install Dependencies
@@ -68,8 +68,8 @@ NEXT_PUBLIC_CONTRACT_ADDRESS=
 # Navigate to contracts directory
 cd contracts/
 
-# Compile NoirCardProtocol.compact
-midnightc compile NoirCardProtocol.compact --output build/
+# Compile SelectConnectProtocol.compact
+midnightc compile SelectConnectProtocol.compact --output build/
 ```
 
 Expected output:
@@ -79,7 +79,7 @@ Expected output:
 ✓ Generating ZK circuits...
 ✓ Optimizing...
 ✓ Contract compiled successfully
-  Output: build/NoirCardProtocol.json
+  Output: build/SelectConnectProtocol.json
   Size: ~XXX KB
   Circuits: 22
 ```
@@ -88,7 +88,7 @@ Expected output:
 ```bash
 # Deploy the contract
 midnight-cli deploy \
-  --contract build/NoirCardProtocol.json \
+  --contract build/SelectConnectProtocol.json \
   --network testnet \
   --wallet your-wallet-address \
   --gas-limit 5000000
@@ -96,7 +96,7 @@ midnight-cli deploy \
 
 Expected output:
 ```
-Deploying NoirCardProtocol...
+Deploying SelectConnectProtocol...
 Transaction ID: 0x123...
 Contract Address: midnight1abc...
 Status: Success
@@ -140,7 +140,7 @@ npm run relay:dev
 
 Expected output:
 ```
-[Relay] Starting NoirCard Relay Service...
+[Relay] Starting SelectConnect Relay Service...
 [Relay] Redis connected successfully
 [Relay] WebSocket server listening on :3001
 [Relay] REST API available at http://localhost:3001
@@ -178,7 +178,7 @@ npm run test
 
 ### 2. Integration Testing
 
-#### Test Case 1: Create a NoirCard
+#### Test Case 1: Create a SelectConnect
 1. Open the application at `http://localhost:3000`
 2. Click "Create New Card"
 3. Fill in:
@@ -353,7 +353,7 @@ curl http://localhost:3001/metrics
 ```bash
 # Deploy to Midnight mainnet
 midnight-cli deploy \
-  --contract build/NoirCardProtocol.json \
+  --contract build/SelectConnectProtocol.json \
   --network mainnet \
   --wallet <MAINNET_WALLET> \
   --gas-price auto \
@@ -364,11 +364,11 @@ midnight-cli deploy \
 
 ### Documentation
 - [Midnight Compact v0.16 Docs](https://docs.midnight.network/compact/v0.16)
-- [NoirCard Protocol Specification](./contracts/NoirCardProtocol.compact)
+- [SelectConnect Protocol Specification](./contracts/SelectConnectProtocol.compact)
 - [API Documentation](./docs/API.md)
 
 ### Support Channels
-- GitHub Issues: https://github.com/bytewizard42i/NoirCard_me/issues
+- GitHub Issues: https://github.com/bytewizard42i/SelectConnect_me/issues
 - Discord: https://discord.gg/midnight
 - Email: support@noircard.io
 
@@ -403,8 +403,8 @@ Your deployment is successful when:
 
 ---
 
-**Congratulations!** You've successfully deployed the NoirCard Protocol. 
+**Congratulations!** You've successfully deployed the SelectConnect Protocol. 
 
 For any issues or questions, please refer to our GitHub repository or contact our support team.
 
-**NoirCard: Where Privacy Meets Accountability** 🃏🔒⚖️
+**SelectConnect: Where Privacy Meets Accountability** 🃏🔒⚖️

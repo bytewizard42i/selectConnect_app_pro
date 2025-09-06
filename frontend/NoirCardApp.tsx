@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import QRCode from 'qrcode.react';
-import { Camera } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { MidnightProvider, Contract } from '@midnight-ntwrk/midnight-js-sdk';
+import QRCode from 'qrcode';
+import jsQR from 'jsqr';
 
 // Midnight SDK types (placeholders until SDK is available)
 interface MidnightProvider {
@@ -26,13 +27,16 @@ declare global {
   }
 }
 
+// Types for our SelectConnect data structure
 interface SelectConnectData {
-  cardId: string;
+  id: string;
   alias: string;
-  card_admin: string;
-  active: boolean;
-  policy: CardPolicy;
-  revealLevels: RevealLevel[];
+  phone?: string;
+  email?: string;
+  requiresBond: boolean;
+  minBondAmount: string;
+  isActive: boolean;
+  createdAt: Date;
 }
 
 interface CardPolicy {
