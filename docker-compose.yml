@@ -35,25 +35,23 @@ services:
     ports:
       - "9944:9944"  # WebSocket RPC
       - "9933:9933"  # HTTP RPC
-      - "30333:30333"  # P2P
-    environment:
-      - CHAIN=local
-      - RPC_EXTERNAL=true
-      - WS_EXTERNAL=true
-      - RPC_CORS=all
-      - PRUNING=archive
     volumes:
-      - midnight-chain-data:/data
+      - midnight-chain-data:/node/chain
+    environment:
+      - MIDNIGHT_NODE_BASE_PATH=/node/chain
+      - MIDNIGHT_NODE_CHAIN=local
+      - use_main_chain_follower_mock=true  # Disable Ariadne for local dev
+    command: >
+      --dev
+      --rpc-external
+      --ws-external
+      --rpc-cors=all
+      --pruning=archive
+      --base-path=/node/chain
     networks:
       - selectconnect-network
-    command: [
-      "--dev",
-      "--rpc-external",
-      "--ws-external",
-      "--rpc-cors=all",
-      "--pruning=archive",
-      "--base-path=/data"
-    ]
+    depends_on:
+      - midnight-proof-server
 
   # Redis for Relay Service
   redis:
