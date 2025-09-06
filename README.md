@@ -1,6 +1,6 @@
-![NoirCard](media/NoirCard-image.png)
+![SelectConnect](media/SelectConnect-image.png)
 
-# 🃏 NoirCard: Privacy-First Professional Networking
+# 🔗 SelectConnect: Privacy-First Contact Sharing
 
 ### 🏆 Midnight Network "Privacy First" Challenge Submission
 
@@ -14,8 +14,8 @@
 
 ```bash
 # Clone and start the demo
-git clone https://github.com/bytewizard42i/NoirCard.git
-cd NoirCard
+git clone https://github.com/bytewizard42i/utils_selectConnect_app_pro.git
+cd utils_selectConnect_app_pro
 chmod +x start-hackathon-demo.sh
 ./start-hackathon-demo.sh
 ```
@@ -28,7 +28,7 @@ Every year:
 - **$2.1B lost** to spam from leaked contact data
 - **89% wish** they could revoke shared contact info
 
-**NoirCard changes everything.**
+**SelectConnect changes everything.**
 
 ## 🚨 The Problem We Solve
 
@@ -39,17 +39,17 @@ Every year:
 - Sales professionals struggle with low-quality leads
 - No accountability for bad actors who abuse shared information
 
-**NoirCard changes everything.**
+**SelectConnect changes everything.**
 
 ## 🎯 Revolutionary Solution: Economic Accountability + Privacy
 
-NoirCard combines **progressive contact revelation** with **economic abuse deterrence** to create the first truly safe networking platform. Built on Midnight's privacy-preserving blockchain, it enables secure, accountable interactions without compromising personal privacy.
+SelectConnect combines **progressive contact revelation** with **economic abuse deterrence** to create the first truly safe contact sharing platform. Built on Midnight's privacy-preserving blockchain, it enables secure, accountable interactions without compromising personal privacy.
 
 ## 🏗️ Architecture - Built with Midnight ZK Technology
 
 ### Zero-Knowledge Proof Implementation
 
-NoirCard leverages Midnight's Compact v0.16 to create **22 ZK circuits** that enable:
+SelectConnect leverages Midnight's Compact v0.16 to create **22 ZK circuits** that enable:
 - **Private Authorization**: Prove ownership without revealing identity
 - **Commitment-Based Storage**: Contact info stored as cryptographic commitments
 - **Selective Disclosure**: Progressive reveal with Merkle tree proofs
@@ -73,7 +73,7 @@ NoirCard leverages Midnight's Compact v0.16 to create **22 ZK circuits** that en
    - Encrypted evidence storage
    - Rate limiting and reputation tracking
    
-4. **NoirCardApp.tsx** - Beautiful React Frontend
+4. **SelectConnectApp.tsx** - Beautiful React Frontend
    - QR code generation with bond requirements
    - Progressive reveal interface
    - Real-time bond status updates
@@ -85,7 +85,7 @@ NoirCard leverages Midnight's Compact v0.16 to create **22 ZK circuits** that en
 
 *Problem*: Sarah wants to network but fears harassment after sharing her contact info.
 
-*NoirCard Solution*:
+*SelectConnect Solution*:
 - Creates conference-specific card: "Sarah Chen - DevCon 2025"
 - Sets 3 ADA bond requirement (≈$1.50) to contact her
 - Configures progressive reveal: Name → LinkedIn → Email → Phone
@@ -98,7 +98,7 @@ NoirCard leverages Midnight's Compact v0.16 to create **22 ZK circuits** that en
 
 *Problem*: Traditional dating apps expose users to stalking and abuse.
 
-*NoirCard Solution*:
+*SelectConnect Solution*:
 - Creates dating profile with 5 ADA bond requirement
 - Progressive reveal: First name → Interests → Photo → Contact info
 - Automatic refund when she responds positively
@@ -111,7 +111,7 @@ NoirCard leverages Midnight's Compact v0.16 to create **22 ZK circuits** that en
 
 *Problem*: Receives hundreds of low-quality leads, wasting time on unqualified prospects.
 
-*NoirCard Solution*:
+*SelectConnect Solution*:
 - Sets 10 ADA bond for enterprise contacts
 - Higher bonds filter for serious buyers
 - Progressive reveal based on qualification level
@@ -124,7 +124,7 @@ NoirCard leverages Midnight's Compact v0.16 to create **22 ZK circuits** that en
 
 *Problem*: Overwhelmed by fan mail, some turning into harassment.
 
-*NoirCard Solution*:
+*SelectConnect Solution*:
 - Tiered bond system: 1 ADA (fans) → 5 ADA (business) → 20 ADA (media)
 - Reputation system tracks repeat offenders
 - Guardian network for dispute resolution
@@ -132,7 +132,7 @@ NoirCard leverages Midnight's Compact v0.16 to create **22 ZK circuits** that en
 
 *Result*: Fans can still connect, but economic barriers prevent mass harassment. Bad actors are tracked pseudonymously across the platform.
 
-## 🛡️ How NoirCard Protects Women & Vulnerable Users
+## 🛡️ How SelectConnect Protects Women & Vulnerable Users
 
 ### Economic Deterrence
 - **Spam Prevention**: 3 ADA bond makes mass messaging economically unviable
@@ -175,8 +175,8 @@ senderNull = PRF(secretKey, cardId)
 
 ```bash
 # Clone and setup
-git clone https://github.com/bytewizard42i/NoirCard_me.git
-cd NoirCard_me && npm install
+git clone https://github.com/bytewizard42i/utils_selectConnect_app_pro.git
+cd utils_selectConnect_app_pro && npm install
 
 # Configure environment
 cp .env.example .env
@@ -214,7 +214,7 @@ npm run dev
 - **84% decrease** in harassment reports
 - **$50M potential revenue** from premium safety features
 
-## 🏆 Why NoirCard Wins
+## 🏆 Why SelectConnect Wins
 
 ### Unique Value Proposition
 1. **First Solution** to combine privacy with accountability
@@ -358,13 +358,13 @@ circuit getSafetyPool(cardId) -> balance
 ### Long Term (Q4 2025+)
 - **Cross-Chain Expansion**: Ethereum, Polygon, Solana integration
 - **AI-Powered Safety**: Machine learning for harassment detection
-- **Global Standards**: Establish NoirCard as networking safety protocol
+- **Global Standards**: Establish SelectConnect as networking safety protocol
 
 ---
 
-**Judges, NoirCard isn't just another networking app—it's a fundamental shift toward accountable, privacy-preserving digital interactions. We're not just building technology; we're building a safer digital world.**
+**Judges, SelectConnect isn't just another networking app—it's a fundamental shift toward accountable, privacy-preserving digital interactions. We're not just building technology; we're building a safer digital world.**
 
-*Ready to revolutionize networking? The future is NoirCard.* 🃏✨
+*Ready to revolutionize networking? The future is SelectConnect.* 🃏✨
 
 ## 📄 License & Contributing
 
@@ -378,4 +378,4 @@ Apache License 2.0 - Open source for maximum impact and community contribution.
 
 *"Where privacy meets accountability, safety meets innovation, and networking meets its future."*
 
-**NoirCard: Redefining digital trust, one connection at a time.** 🃏🔒⚖️
+**SelectConnect: Redefining digital trust, one connection at a time.** 🃏🔒⚖️

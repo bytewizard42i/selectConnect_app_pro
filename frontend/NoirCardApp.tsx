@@ -26,7 +26,7 @@ declare global {
   }
 }
 
-interface NoirCardData {
+interface SelectConnectData {
   cardId: string;
   alias: string;
   card_admin: string;
@@ -59,15 +59,15 @@ interface AccessLink {
   revoked: boolean;
 }
 
-export const NoirCardApp: React.FC = () => {
-  const [cards, setCards] = useState<NoirCardData[]>([]);
-  const [activeCard, setActiveCard] = useState<NoirCardData | null>(null);
+export const SelectConnectApp: React.FC = () => {
+  const [cards, setCards] = useState<SelectConnectData[]>([]);
+  const [activeCard, setActiveCard] = useState<SelectConnectData | null>(null);
   const [generatedLink, setGeneratedLink] = useState<string>('');
   const [scannedData, setScannedData] = useState<any>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [provider, setProvider] = useState<MidnightProvider | null>(null);
   const [signer, setSigner] = useState<MidnightSigner | null>(null);
-  const [noirCardContract, setNoirCardContract] = useState<MidnightContract | null>(null);
+  const [selectConnectContract, setSelectConnectContract] = useState<MidnightContract | null>(null);
   const [abuseEscrowContract, setAbuseEscrowContract] = useState<MidnightContract | null>(null);
 
   // Initialize wallet connection
@@ -83,16 +83,16 @@ export const NoirCardApp: React.FC = () => {
       setSigner(signer);
       
       // Initialize contracts with environment variables or defaults
-      const noirCardAddress = typeof window !== 'undefined' 
-        ? (window as any).NEXT_PUBLIC_NOIRCARD_ADDRESS || '0x...' 
+      const selectConnectAddress = typeof window !== 'undefined' 
+        ? (window as any).NEXT_PUBLIC_SELECTCONNECT_ADDRESS || '0x...' 
         : '0x...';
       const abuseEscrowAddress = typeof window !== 'undefined' 
         ? (window as any).NEXT_PUBLIC_ABUSE_ESCROW_ADDRESS || '0x...' 
         : '0x...';
       
-      const noirCard = await provider.getContract(noirCardAddress);
+      const selectConnect = await provider.getContract(selectConnectAddress);
       const abuseEscrow = await provider.getContract(abuseEscrowAddress);
-      setNoirCardContract(noirCard);
+      setSelectConnectContract(selectConnect);
       setAbuseEscrowContract(abuseEscrow);
       
       // Load user's cards
@@ -103,10 +103,10 @@ export const NoirCardApp: React.FC = () => {
   const loadUserCards = async (signer: MidnightSigner) => {
     // Implementation would load cards from contract
     // Mock data for now
-    const mockCards: NoirCardData[] = [
+    const mockCards: SelectConnectData[] = [
       {
         cardId: '0x123...',
-        alias: 'John Doe - Tech Conference',
+        alias: 'John Doe - SelectConnect Profile',
         card_admin: await signer.getAddress(),
         active: true,
         policy: {
@@ -145,8 +145,8 @@ export const NoirCardApp: React.FC = () => {
         .join('');
       
       // Call Midnight contract to create card
-      if (noirCardContract) {
-        await noirCardContract.call('createCard', [
+      if (selectConnectContract) {
+        await selectConnectContract.call('createCard', [
           cardData.alias,
           contactDataHash,
           cardData.policy,
@@ -174,8 +174,8 @@ export const NoirCardApp: React.FC = () => {
         .join('');
       
       // Call Midnight contract to generate link
-      if (noirCardContract) {
-        const result = await noirCardContract.call('generateAccessLink', [
+      if (selectConnectContract) {
+        const result = await selectConnectContract.call('generateAccessLink', [
           cardId, 
           customTTL || 0, 
           recipientCommit
@@ -263,8 +263,8 @@ export const NoirCardApp: React.FC = () => {
         .join('');
       
       // Call Midnight contract to access card
-      if (noirCardContract) {
-        const revealedData = await noirCardContract.call('accessCard', [
+      if (selectConnectContract) {
+        const revealedData = await selectConnectContract.call('accessCard', [
           linkId, 
           level, 
           recipientCommit
@@ -300,8 +300,8 @@ export const NoirCardApp: React.FC = () => {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black text-white">
       <div className="container mx-auto px-4 py-8">
         <header className="text-center mb-12">
-          <h1 className="text-4xl font-bold mb-4">NoirCard</h1>
-          <p className="text-gray-300">Privacy-first business cards with progressive reveal</p>
+          <h1 className="text-4xl font-bold mb-4">SelectConnect</h1>
+          <p className="text-gray-300">Privacy-first contact sharing with progressive reveal</p>
         </header>
 
         <div className="grid md:grid-cols-2 gap-8">
@@ -463,4 +463,4 @@ export const NoirCardApp: React.FC = () => {
   );
 };
 
-export default NoirCardApp;
+export default SelectConnectApp;

@@ -1,7 +1,7 @@
 {
-  "name": "noircard-demo",
+  "name": "selectconnect-demo",
   "version": "1.0.0",
-  "description": "NoirCard Demo - Privacy-first business cards",
+  "description": "SelectConnect Demo - Privacy-first contact sharing",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

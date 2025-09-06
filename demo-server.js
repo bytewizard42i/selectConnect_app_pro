@@ -16,8 +16,8 @@ const bonds = new Map();
 
 // Using in-memory storage for demo (Redis removed for simplicity)
 
-// Mock NoirCard Protocol functions
-class NoirCardProtocol {
+// Mock SelectConnect Protocol functions
+class SelectConnectProtocol {
   static createCard(aliasHash, requiresBond, minBondAmount, phoneCommit, emailCommit) {
     const cardId = crypto.randomUUID();
     const card = {
@@ -70,7 +70,7 @@ app.get('/', (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-        <title>🃏 NoirCard Demo</title>
+        <title>🔗 SelectConnect Demo</title>
         <style>
             body { 
                 font-family: Arial, sans-serif; 
@@ -114,11 +114,11 @@ app.get('/', (req, res) => {
         </style>
     </head>
     <body>
-        <h1>🃏 NoirCard Protocol Demo</h1>
+        <h1>🃏 SelectConnect Protocol Demo</h1>
         <p><strong>Privacy-First Professional Networking with Abuse Protection</strong></p>
         
         <div class="card">
-            <h2>Create NoirCard</h2>
+            <h2>Create SelectConnect</h2>
             <input type="text" id="name" placeholder="Your Name" />
             <input type="text" id="email" placeholder="Email" />
             <input type="text" id="phone" placeholder="Phone" />
@@ -154,7 +154,7 @@ app.get('/', (req, res) => {
                 const result = await response.json();
                 document.getElementById('cardResult').innerHTML = \`
                     <div class="card">
-                        <h3>✅ NoirCard Created!</h3>
+                        <h3>✅ SelectConnect Created!</h3>
                         <p><strong>Card ID:</strong> \${result.cardId}</p>
                         <p><strong>Required Bond:</strong> \${result.bondAmount} ADA</p>
                         <div class="qr-code">
@@ -213,7 +213,7 @@ app.post('/api/create-card', async (req, res) => {
   const emailCommit = crypto.createHash('sha256').update(email + 'salt').digest('hex');
   const aliasHash = crypto.createHash('sha256').update(name).digest('hex');
   
-  const cardId = NoirCardProtocol.createCard(
+  const cardId = SelectConnectProtocol.createCard(
     aliasHash, 
     true, 
     parseFloat(bondAmount), 
@@ -225,7 +225,7 @@ app.post('/api/create-card', async (req, res) => {
   const qrData = JSON.stringify({
     cardId,
     bondRequired: bondAmount,
-    type: 'noircard'
+    type: 'selectconnect'
   });
   
   const qrCode = await QRCode.toDataURL(qrData);
@@ -234,14 +234,14 @@ app.post('/api/create-card', async (req, res) => {
     cardId,
     bondAmount,
     qrCode,
-    message: 'NoirCard created successfully with abuse protection!'
+    message: 'SelectConnect created successfully with abuse protection!'
   });
 });
 
 app.post('/api/post-bond', (req, res) => {
   const { cardId, amount } = req.body;
   
-  const card = NoirCardProtocol.getCard(cardId);
+  const card = SelectConnectProtocol.getCard(cardId);
   if (!card) {
     return res.json({ success: false, message: 'Card not found' });
   }
@@ -256,7 +256,7 @@ app.post('/api/post-bond', (req, res) => {
   // Create sender commitment (mock)
   const senderCommit = crypto.createHash('sha256').update(cardId + Date.now()).digest('hex');
   
-  const bondId = NoirCardProtocol.postBond(cardId, parseFloat(amount), senderCommit);
+  const bondId = SelectConnectProtocol.postBond(cardId, parseFloat(amount), senderCommit);
   
   res.json({
     success: true,
@@ -268,7 +268,7 @@ app.post('/api/post-bond', (req, res) => {
 });
 
 app.get('/api/card/:cardId', (req, res) => {
-  const card = NoirCardProtocol.getCard(req.params.cardId);
+  const card = SelectConnectProtocol.getCard(req.params.cardId);
   if (!card) {
     return res.status(404).json({ error: 'Card not found' });
   }
@@ -282,7 +282,7 @@ app.get('/api/card/:cardId', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log('🃏 NoirCard Demo Server Started!');
+  console.log('🃏 SelectConnect Demo Server Started!');
   console.log('================================');
   console.log(`🌐 Frontend: http://localhost:${PORT}`);
   console.log('🔄 Redis: localhost:6379 (if available)');

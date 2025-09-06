@@ -1,7 +1,7 @@
 {
-  "name": "noircard",
+  "name": "selectconnect",
   "version": "1.0.0",
-  "description": "Privacy-first business cards with QR codes, progressive reveal, and abuse protection on Midnight",
+  "description": "SelectConnect - Privacy-first contact sharing with QR codes, progressive reveal, and abuse protection on Midnight",
   "main": "index.js",
   "scripts": {
     "dev": "next dev",
@@ -20,15 +20,16 @@
     "test:contracts": "compact test"
   },
   "keywords": [
-    "noircard",
-    "business-cards",
+    "selectconnect",
+    "contact-sharing",
     "qr-codes",
     "privacy",
     "midnight",
     "blockchain",
-    "progressive-reveal"
+    "progressive-reveal",
+    "abuse-protection"
   ],
-  "author": "NoirCard Team",
+  "author": "SelectConnect Team",
   "license": "Apache-2.0",
   "dependencies": {
     "@midnight-ntwrk/midnight-js-sdk": "^0.16.0",
@@ -71,11 +72,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/bytewizard42i/NoirCard_me.git"
+    "url": "git+https://github.com/bytewizard42i/utils_selectConnect_app_pro.git"
   },
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/bytewizard42i/NoirCard_me/issues"
+    "url": "https://github.com/bytewizard42i/utils_selectConnect_app_pro/issues"
   },
-  "homepage": "https://github.com/bytewizard42i/NoirCard_me#readme"
+  "homepage": "https://selectconnect.pro"
 }

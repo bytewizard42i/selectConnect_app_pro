@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Midnight Local Proof Server
   midnight-proof-server:
@@ -56,7 +54,7 @@ services:
 
   # Redis for Relay Service
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     container_name: noircard-redis
     ports:
       - "6379:6379"

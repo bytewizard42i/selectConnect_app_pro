@@ -1,7 +1,7 @@
 {
-  "name": "noircard-demo",
+  "name": "selectconnect-demo",
   "version": "1.0.0",
-  "description": "NoirCard Demo - Privacy-first business cards with QR codes",
+  "description": "SelectConnect Demo - Privacy-first contact sharing with QR codes",
   "main": "demo-server.js",
   "scripts": {
     "demo": "node demo-server.js",
