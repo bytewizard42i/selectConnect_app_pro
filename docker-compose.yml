@@ -18,6 +18,7 @@ services:
       - midnight-proof-cache:/cache
     networks:
       - selectconnect-network
+    command: ["midnight-proof-server", "--network", "testnet"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6301/health"]
       interval: 30s

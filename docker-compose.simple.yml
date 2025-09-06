@@ -6,17 +6,18 @@ services:
     image: midnightnetwork/proof-server:latest
     container_name: midnight-proof-server
     ports:
-      - "8080:8080"  # Proof server port (matching start-local-dev.sh)
+      - "6300:6300"  # Proof server port (per Midnight docs)
     environment:
-      - PROOF_SERVER_PORT=8080
+      - PROOF_SERVER_PORT=6300
       - LOG_LEVEL=info
       - MAX_CIRCUIT_SIZE=2097152  # 2MB max circuit size
       - CACHE_SIZE=1000
       - WORKER_THREADS=2
     networks:
-      - noircard-network
+      - selectconnect-network
+    command: ["midnight-proof-server", "--network", "testnet"]
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:6300/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -29,7 +30,7 @@ services:
     ports:
       - "6379:6379"
     networks:
-      - noircard-network
+      - selectconnect-network
     command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -38,5 +39,5 @@ services:
       retries: 3
 
 networks:
-  noircard-network:
+  selectconnect-network:
     driver: bridge
