@@ -1,4 +1,4 @@
-![SelectConnect](media/selectConnect-logo.png)
+![SelectConnect](media/selectConnect-image-3.png)
 
 # 🔗 SelectConnect: Privacy-First Contact Sharing
 
