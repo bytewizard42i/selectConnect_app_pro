@@ -149,29 +149,12 @@ export ledger abuse_counters: Map<Bytes<32>, Uint<64>>;
 
 // === Privacy Routing ===
 // Privacy routing state - maps 5-digit codes to privacy configurations
-export ledger privacy_routes: Map<Bytes<32>, PrivacyRoute>;
+// Format: routeCode -> (cardId, privacyLevel, expiresAt, isTrackable, createdAt, usageCount)
+export ledger privacy_routes: Map<Bytes<32>, (Bytes<32>, Uint<8>, Uint<64>, Boolean, Uint<64>, Uint<32>)>;
 
 // Interaction tracking for spam prevention
-export ledger interaction_tracking: Map<Bytes<32>, InteractionRecord>;
-
-// Privacy route configuration
-struct PrivacyRoute {
-    cardId: Bytes<32>,
-    privacyLevel: PrivacyLevel,
-    expiresAt: Uint<64>,
-    isTrackable: Boolean,
-    createdAt: Uint<64>,
-    usageCount: Uint<32>
-}
-
-// Interaction record for spam tracking
-struct InteractionRecord {
-    routeCode: Bytes<32>,
-    senderCommit: Bytes<32>,
-    timestamp: Uint<64>,
-    interactionType: InteractionType,
-    reportedAsSpam: Boolean
-}
+// Format: interactionId -> (routeCode, senderCommit, timestamp, interactionType, reportedAsSpam)
+export ledger interaction_tracking: Map<Bytes<32>, (Bytes<32>, Bytes<32>, Uint<64>, Uint<8>, Boolean)>;
 
 // ============================================================================
 // CONSTRUCTOR
@@ -799,85 +782,121 @@ export circuit generatePrivacyRoute(
     ttl: Uint<64>,
     isTrackable: Boolean
 ): Bytes<32> {
-    // Verify card ownership
-    let cardData = card_data.get(cardId);
-    assert(cardData.isActive);
-    assert(cardData.adminId == adminId(round.get(), adminSecret()));
+    // Verify card exists and is active
+    assert(contains(cards, cardId), "Card does not exist");
+    let cardState = get(card_states, cardId);
+    assert(cardState == CardState.ACTIVE, "Card not active");
+    
+    // Verify admin authorization
+    requireCardAdmin(cardId);
     
     // Generate unique 5-digit route code
-    let routeCode = generateRouteCode(cardId, privacyLevel, rand());
+    const r = randomValue();
+    let routeCode = generateRouteCode(cardId, privacyLevel, r);
     
     // Create privacy route
-    let route = PrivacyRoute {
-        cardId: cardId,
-        privacyLevel: privacyLevel,
-        expiresAt: (nowTs() + ttl),
-        isTrackable: isTrackable,
-        createdAt: nowTs(),
-        usageCount: 0u32
-    };
+    const now = currentTimestamp();
+    const expiresAt = now + ttl;
     
-    privacy_routes.set(routeCode, route);
-    return routeCode;
+    // Store route components separately (Compact doesn't support complex structs in maps)
+    insert(privacy_routes, routeCode, (
+        cardId,
+        privacyLevel as Uint<8>,
+        expiresAt,
+        isTrackable,
+        now,
+        0u32  // usageCount
+    ));
+    
+    return disclose(routeCode);
 }
 
 // Access card via 5-digit privacy route
 export circuit accessViaPrivacyRoute(
     routeCode: Bytes<32>,
     senderCommit: Bytes<32>
-): (Bytes<32>, PrivacyLevel, Boolean) {
-    // Get privacy route
-    let route = privacy_routes.get(routeCode);
-    assert(route.expiresAt > nowTs());
+): (Bytes<32>, Uint<8>, Boolean) {
+    // Get privacy route components
+    assert(contains(privacy_routes, routeCode), "Route does not exist");
+    let (cardId, privacyLevel, expiresAt, isTrackable, createdAt, usageCount) = get(privacy_routes, routeCode);
+    
+    // Verify route is not expired
+    const now = currentTimestamp();
+    assert(now < expiresAt, "Route has expired");
     
     // Track interaction if trackable
-    if (route.isTrackable) {
-        let interaction = InteractionRecord {
-            routeCode: routeCode,
-            senderCommit: senderCommit,
-            timestamp: nowTs(),
-            interactionType: InteractionType::Initial,
-            reportedAsSpam: false
-        };
-        
+    if (isTrackable) {
+        // Generate interaction ID
+        const r = randomValue();
         let interactionId = persistentHash<Vector<4, Bytes<32>>>([
             routeCode, 
             senderCommit, 
-            (nowTs() as Bytes<32>),
-            rand()
+            toBytes32(now),
+            r
         ]);
-        interaction_tracking.set(interactionId, interaction);
+        
+        // Store interaction (routeCode, senderCommit, timestamp, interactionType, reportedAsSpam)
+        insert(interaction_tracking, interactionId, (
+            routeCode,
+            senderCommit,
+            now,
+            0u8,  // InteractionType.Initial
+            false  // not reported as spam
+        ));
     }
     
-    // Increment usage count
-    route.usageCount = route.usageCount + 1u32;
-    privacy_routes.set(routeCode, route);
+    // Update usage count
+    remove(privacy_routes, routeCode);
+    insert(privacy_routes, routeCode, (
+        cardId,
+        privacyLevel,
+        expiresAt,
+        isTrackable,
+        createdAt,
+        usageCount + 1u32
+    ));
     
-    return (route.cardId, route.privacyLevel, route.isTrackable);
+    // Return disclosed values
+    return (disclose(cardId), disclose(privacyLevel), disclose(isTrackable));
 }
 
 // Report spam via privacy route (for trackable interactions)
 export circuit reportSpamViaRoute(
     routeCode: Bytes<32>,
     senderCommit: Bytes<32>,
+    interactionId: Bytes<32>,
     evidenceHash: Bytes<32>
 ): [] {
-    let route = privacy_routes.get(routeCode);
-    assert(route.isTrackable); // Only trackable routes can be spam reported
+    // Verify route exists and is trackable
+    assert(contains(privacy_routes, routeCode), "Route does not exist");
+    let (cardId, privacyLevel, expiresAt, isTrackable, createdAt, usageCount) = get(privacy_routes, routeCode);
+    assert(isTrackable, "Route is not trackable");
     
-    // Find and update interaction record
-    let interactionId = persistentHash<Vector<4, Bytes<32>>>([
+    // Verify interaction exists
+    assert(contains(interaction_tracking, interactionId), "Interaction not found");
+    let (iRouteCode, iSenderCommit, timestamp, interactionType, reportedAsSpam) = get(interaction_tracking, interactionId);
+    
+    // Verify interaction matches
+    assert(iRouteCode == routeCode, "Route mismatch");
+    assert(iSenderCommit == senderCommit, "Sender mismatch");
+    assert(!reportedAsSpam, "Already reported");
+    
+    // Update interaction record
+    remove(interaction_tracking, interactionId);
+    insert(interaction_tracking, interactionId, (
         routeCode,
         senderCommit,
-        (nowTs() as Bytes<32>),
-        rand()
-    ]);
-    let interaction = interaction_tracking.get(interactionId);
-    interaction.reportedAsSpam = true;
-    interaction.interactionType = InteractionType::Spam_reported;
-    interaction_tracking.set(interactionId, interaction);
+        timestamp,
+        2u8,  // InteractionType.Spam_reported
+        true  // reported as spam
+    ));
     
-    // Could trigger bond slashing or reputation penalties here
+    // Increment abuse counter for the card
+    let currentCount = getOrDefault(abuse_counters, cardId, 0u64);
+    remove(abuse_counters, cardId);
+    insert(abuse_counters, cardId, currentCount + 1u64);
+    
+    round.increment(1);
 }
 
 // Helper: Generate 5-digit route code
@@ -892,8 +911,11 @@ circuit generateRouteCode(cardId: Bytes<32>, privacyLevel: PrivacyLevel, salt: B
     return (codeNum as Bytes<32>);
 }
 
-// Helper functions for timestamp
-witness nowTs(): Uint<64>;
+// Random value witness for route generation
+witness randomValue(): Bytes<32>;
+
+// Current timestamp witness
+witness currentTimestamp(): Uint<64>;
 
 // ============================================================================
 // READ-ONLY QUERIES (View Functions)

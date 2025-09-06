@@ -9,10 +9,12 @@ services:
     environment:
       - PROOF_SERVER_PORT=6300
       - METRICS_PORT=6301
-      - LOG_LEVEL=info
-      - MAX_CIRCUIT_SIZE=2097152  # 2MB max circuit size
-      - CACHE_SIZE=1000
-      - WORKER_THREADS=4
+      - LOG_LEVEL=debug  # Enhanced logging for development
+      - MAX_CIRCUIT_SIZE=4194304  # 4MB max circuit size (increased for SelectConnect)
+      - CACHE_SIZE=2000  # Increased cache for better performance
+      - WORKER_THREADS=8  # More threads for parallel proof generation
+      - ENABLE_METRICS=true
+      - PROOF_TIMEOUT=300  # 5 minutes timeout for complex proofs
     volumes:
       - ./contracts/build:/circuits  # Mount compiled circuits
       - midnight-proof-cache:/cache
@@ -28,7 +30,7 @@ services:
 
   # Midnight Local Node (for testing)
   midnight-node:
-    image: midnightnetwork/node:latest
+    image: midnightnetwork/midnight-node:0.12.1
     container_name: midnight-node
     ports:
       - "9944:9944"  # WebSocket RPC
@@ -84,6 +86,33 @@ services:
       - redis
     networks:
       - selectconnect-network
+
+  # Compact Circuit Compiler
+  midnight-compiler:
+    image: midnightnetwork/compactc:latest
+    container_name: midnight-compiler
+    volumes:
+      - ./contracts:/workspace
+      - ./contracts/build:/output
+    working_dir: /workspace
+    networks:
+      - selectconnect-network
+    profiles:
+      - tools
+    command: ["tail", "-f", "/dev/null"]  # Keep container running for manual compilation
+
+  # Midnight Network Explorer (optional)
+  midnight-explorer:
+    image: nginx:alpine
+    container_name: midnight-explorer
+    ports:
+      - "8080:80"
+    volumes:
+      - ./tools/explorer:/usr/share/nginx/html:ro
+    networks:
+      - selectconnect-network
+    profiles:
+      - tools
 
 volumes:
   midnight-proof-cache:
