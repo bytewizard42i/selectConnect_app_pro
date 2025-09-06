@@ -56,11 +56,27 @@ enum CredentialState {
     REVOKED     // Credential has been rescinded
 }
 
-// Bond states for abuse prevention
+// Bond states for tracking
 enum BondState {
-    POSTED,     // Bond is active
+    ACTIVE,     // Bond posted, not yet released
     REFUNDED,   // Bond returned to sender
     SLASHED     // Bond confiscated due to abuse
+}
+
+// Privacy levels for routing
+enum PrivacyLevel {
+    Company,
+    Personal, 
+    Both,
+    Trusted,
+    Custom
+}
+
+// Interaction types for spam tracking
+enum InteractionType {
+    Initial,
+    Follow_up,
+    Spam_reported
 }
 
 // ============================================================================
@@ -130,6 +146,32 @@ export ledger safety_pools: Map<Bytes<32>, Uint<64>>;
 
 // Abuse reports counter: cardId -> upheld report count
 export ledger abuse_counters: Map<Bytes<32>, Uint<64>>;
+
+// === Privacy Routing ===
+// Privacy routing state - maps 5-digit codes to privacy configurations
+export ledger privacy_routes: Map<Bytes<32>, PrivacyRoute>;
+
+// Interaction tracking for spam prevention
+export ledger interaction_tracking: Map<Bytes<32>, InteractionRecord>;
+
+// Privacy route configuration
+struct PrivacyRoute {
+    cardId: Bytes<32>,
+    privacyLevel: PrivacyLevel,
+    expiresAt: Uint<64>,
+    isTrackable: Boolean,
+    createdAt: Uint<64>,
+    usageCount: Uint<32>
+}
+
+// Interaction record for spam tracking
+struct InteractionRecord {
+    routeCode: Bytes<32>,
+    senderCommit: Bytes<32>,
+    timestamp: Uint<64>,
+    interactionType: InteractionType,
+    reportedAsSpam: Boolean
+}
 
 // ============================================================================
 // CONSTRUCTOR
@@ -745,6 +787,113 @@ export circuit updateCardPolicy(
     
     round.increment(1);
 }
+
+// ============================================================================
+// PRIVACY ROUTING
+// ============================================================================
+
+// Generate dynamic 5-digit privacy route
+export circuit generatePrivacyRoute(
+    cardId: Bytes<32>,
+    privacyLevel: PrivacyLevel,
+    ttl: Uint<64>,
+    isTrackable: Boolean
+): Bytes<32> {
+    // Verify card ownership
+    let cardData = card_data.get(cardId);
+    assert(cardData.isActive);
+    assert(cardData.adminId == adminId(round.get(), adminSecret()));
+    
+    // Generate unique 5-digit route code
+    let routeCode = generateRouteCode(cardId, privacyLevel, rand());
+    
+    // Create privacy route
+    let route = PrivacyRoute {
+        cardId: cardId,
+        privacyLevel: privacyLevel,
+        expiresAt: (nowTs() + ttl),
+        isTrackable: isTrackable,
+        createdAt: nowTs(),
+        usageCount: 0u32
+    };
+    
+    privacy_routes.set(routeCode, route);
+    return routeCode;
+}
+
+// Access card via 5-digit privacy route
+export circuit accessViaPrivacyRoute(
+    routeCode: Bytes<32>,
+    senderCommit: Bytes<32>
+): (Bytes<32>, PrivacyLevel, Boolean) {
+    // Get privacy route
+    let route = privacy_routes.get(routeCode);
+    assert(route.expiresAt > nowTs());
+    
+    // Track interaction if trackable
+    if (route.isTrackable) {
+        let interaction = InteractionRecord {
+            routeCode: routeCode,
+            senderCommit: senderCommit,
+            timestamp: nowTs(),
+            interactionType: InteractionType::Initial,
+            reportedAsSpam: false
+        };
+        
+        let interactionId = persistentHash<Vector<4, Bytes<32>>>([
+            routeCode, 
+            senderCommit, 
+            (nowTs() as Bytes<32>),
+            rand()
+        ]);
+        interaction_tracking.set(interactionId, interaction);
+    }
+    
+    // Increment usage count
+    route.usageCount = route.usageCount + 1u32;
+    privacy_routes.set(routeCode, route);
+    
+    return (route.cardId, route.privacyLevel, route.isTrackable);
+}
+
+// Report spam via privacy route (for trackable interactions)
+export circuit reportSpamViaRoute(
+    routeCode: Bytes<32>,
+    senderCommit: Bytes<32>,
+    evidenceHash: Bytes<32>
+): [] {
+    let route = privacy_routes.get(routeCode);
+    assert(route.isTrackable); // Only trackable routes can be spam reported
+    
+    // Find and update interaction record
+    let interactionId = persistentHash<Vector<4, Bytes<32>>>([
+        routeCode,
+        senderCommit,
+        (nowTs() as Bytes<32>),
+        rand()
+    ]);
+    let interaction = interaction_tracking.get(interactionId);
+    interaction.reportedAsSpam = true;
+    interaction.interactionType = InteractionType::Spam_reported;
+    interaction_tracking.set(interactionId, interaction);
+    
+    // Could trigger bond slashing or reputation penalties here
+}
+
+// Helper: Generate 5-digit route code
+circuit generateRouteCode(cardId: Bytes<32>, privacyLevel: PrivacyLevel, salt: Bytes<32>): Bytes<32> {
+    let combined = persistentHash<Vector<3, Bytes<32>>>([
+        cardId,
+        (privacyLevel as Bytes<32>),
+        salt
+    ]);
+    // Convert to 5-digit code (10000-99999 range)
+    let codeNum = (toUint64(combined) % 90000u64) + 10000u64;
+    return (codeNum as Bytes<32>);
+}
+
+// Helper functions for timestamp
+witness nowTs(): Uint<64>;
 
 // ============================================================================
 // READ-ONLY QUERIES (View Functions)

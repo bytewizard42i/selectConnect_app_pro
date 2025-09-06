@@ -65,14 +65,29 @@ interface AccessLink {
 
 export const SelectConnectApp: React.FC = () => {
   const [cards, setCards] = useState<SelectConnectData[]>([]);
-  const [activeCard, setActiveCard] = useState<SelectConnectData | null>(null);
-  const [generatedLink, setGeneratedLink] = useState<string>('');
-  const [scannedData, setScannedData] = useState<any>(null);
+  const [activeCard, setActiveCard] = useState<any>(null);
+  const [qrData, setQrData] = useState<string>('');
   const [showScanner, setShowScanner] = useState(false);
+  const [scannedData, setScannedData] = useState<string>('');
+  const [bondAmount, setBondAmount] = useState<string>('3');
+  
+  // Privacy routing states
+  const [privacyLevel, setPrivacyLevel] = useState<'Company' | 'Personal' | 'Both' | 'Trusted' | 'Custom'>('Personal');
+  const [generatedCode, setGeneratedCode] = useState<string>('');
+  const [isTrackable, setIsTrackable] = useState<boolean>(false);
+  const [qrCodeType, setQrCodeType] = useState<'standard' | 'trusted'>('standard');
+  
+  // Mobile QR display states
+  const [showMobileQR, setShowMobileQR] = useState<boolean>(false);
+  const [mobileQRData, setMobileQRData] = useState<string>('');
+  const [displayMode, setDisplayMode] = useState<'card' | 'mobile'>('card');
   const [provider, setProvider] = useState<MidnightProvider | null>(null);
   const [signer, setSigner] = useState<MidnightSigner | null>(null);
   const [selectConnectContract, setSelectConnectContract] = useState<MidnightContract | null>(null);
   const [abuseEscrowContract, setAbuseEscrowContract] = useState<MidnightContract | null>(null);
+  
+  // Refs
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   // Initialize wallet connection
   useEffect(() => {
@@ -255,44 +270,43 @@ export const SelectConnectApp: React.FC = () => {
   };
 
   const accessCardData = async (linkId: string, level: number) => {
-    if (!signer) return;
+    // Implementation would interact with SelectConnect contract
+    // to access the next reveal level
+    console.log('Accessing card data:', linkId, level);
+  };
 
+  const generatePrivacyCode = async () => {
+    if (!activeCard || !selectConnectContract) return;
+    
     try {
-      // Generate recipient commitment for per-link access (card_recipient)
-      const encoder = new TextEncoder();
-      const recipientData = encoder.encode(`recipient_${await signer.getAddress()}`);
-      const commitBuffer = await crypto.subtle.digest('SHA-256', recipientData);
-      const recipientCommit = Array.from(new Uint8Array(commitBuffer))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
+      const ttl = 86400; // 24 hours
+      const routeCode = await selectConnectContract.call('generatePrivacyRoute', [
+        activeCard.id,
+        privacyLevel,
+        ttl,
+        isTrackable
+      ]);
       
-      // Call Midnight contract to access card
-      if (selectConnectContract) {
-        const revealedData = await selectConnectContract.call('accessCard', [
-          linkId, 
-          level, 
-          recipientCommit
-        ]);
-        
-        // Process revealed data
-        setScannedData({
-          level: level,
-          dataType: revealedData.dataType,
-          data: revealedData.decryptedData
-        });
-        return;
-      }
+      // Convert to 5-digit display format
+      const codeNum = parseInt(routeCode.slice(-5), 16) % 90000 + 10000;
+      setGeneratedCode(codeNum.toString());
       
-      // Mock revealed data
-      const mockData = {
-        level: level,
-        dataType: level === 1 ? 'name' : level === 2 ? 'email' : 'phone',
-        data: level === 1 ? 'John Doe' : level === 2 ? 'john@example.com' : '+1-555-0123'
-      };
-      
-      setScannedData(mockData);
+      console.log(`Generated ${privacyLevel} code: ${codeNum}`);
     } catch (error) {
-      console.error('Failed to access card data:', error);
+      console.error('Failed to generate privacy code:', error);
+    }
+  };
+
+  const generateMobileQR = async () => {
+    if (!activeCard) return;
+    
+    try {
+      // Generate account-level QR that works with any privacy code
+      const accountQR = `selectconnect://account/${activeCard.id}`;
+      setMobileQRData(accountQR);
+      setShowMobileQR(true);
+    } catch (error) {
+      console.error('Failed to generate mobile QR:', error);
     }
   };
 
@@ -424,39 +438,281 @@ export const SelectConnectApp: React.FC = () => {
               </div>
             )}
 
-            {/* QR Scanner */}
-            <div className="border-t border-gray-700 pt-6 mt-6">
-              <button 
-                className="w-full bg-purple-600 hover:bg-purple-700 px-4 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
-                onClick={() => setShowScanner(true)}
+            {/* Card Display Options */}
+            <div className="bg-gray-800 rounded-lg p-6 mb-6">
+              <h3 className="text-xl font-semibold mb-4 text-white">
+                📱 Card Display Options
+              </h3>
+              
+              <div className="flex space-x-4 mb-4">
+                <button
+                  onClick={() => setDisplayMode('card')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    displayMode === 'card'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  🎴 Physical Cards
+                </button>
+                <button
+                  onClick={() => setDisplayMode('mobile')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    displayMode === 'mobile'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  📱 Mobile Display
+                </button>
+              </div>
+              
+              <p className="text-gray-400 text-sm">
+                {displayMode === 'card' 
+                  ? 'Design and preview your physical business cards'
+                  : 'Show QR code on your phone when you run out of physical cards'
+                }
+              </p>
+            </div>
+
+            {/* Privacy Code Generation Section */}
+            <div className="bg-gray-800 rounded-lg p-6 mb-6">
+              <h3 className="text-xl font-semibold mb-4 text-white">
+                🎯 Generate Privacy Code
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {/* Privacy Level Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Privacy Level
+                  </label>
+                  <select
+                    value={privacyLevel}
+                    onChange={(e) => setPrivacyLevel(e.target.value as any)}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  >
+                    <option value="Personal">👤 Personal Only</option>
+                    <option value="Company">🏢 Company Only</option>
+                    <option value="Both">🔄 Both Personal & Company</option>
+                    <option value="Trusted">🔒 Trusted (Trackable)</option>
+                    <option value="Custom">⚙️ Custom Settings</option>
+                  </select>
+                </div>
+                
+                {/* QR Code Type */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    QR Code Type
+                  </label>
+                  <div className="flex space-x-4">
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="standard"
+                        checked={qrCodeType === 'standard'}
+                        onChange={(e) => {
+                          setQrCodeType('standard');
+                          setIsTrackable(false);
+                        }}
+                        className="mr-2"
+                      />
+                      <span className="text-white">⚫ Standard (Private)</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="trusted"
+                        checked={qrCodeType === 'trusted'}
+                        onChange={(e) => {
+                          setQrCodeType('trusted');
+                          setIsTrackable(true);
+                        }}
+                        className="mr-2"
+                      />
+                      <span className="text-red-400">🔴 Trusted (Trackable)</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Generate Button */}
+              <button
+                onClick={generatePrivacyCode}
+                disabled={!activeCard}
+                className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-3 px-6 rounded-lg transition-all duration-200"
               >
-                <Camera size={20} />
-                Scan QR Code
+                Generate 5-Digit Code
               </button>
+              
+              {/* Generated Code Display */}
+              {generatedCode && (
+                <div className="mt-4 p-4 bg-gray-700 rounded-lg border-2 border-dashed border-gray-500">
+                  <div className="text-center">
+                    <p className="text-gray-300 mb-2">Your 5-Digit Privacy Code:</p>
+                    <div className="text-4xl font-mono font-bold text-green-400 mb-2">
+                      {generatedCode}
+                    </div>
+                    <p className="text-sm text-gray-400">
+                      {qrCodeType === 'trusted' ? '🔴 Trackable for spam prevention' : '⚫ Private interaction'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Valid for 24 hours • {privacyLevel} privacy level
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* QR Scanner */}
+            <div className="bg-gray-800 rounded-lg p-6">
+              <h2 className="text-2xl font-bold mb-4">QR Scanner</h2>
+              
+              {showScanner && (
+                <div className="mb-4">
+                  <video 
+                    ref={videoRef}
+                    className="w-full max-w-md mx-auto rounded-lg"
+                    autoPlay
+                    playsInline
+                  />
+                </div>
+              )}
+              
+              <div className="space-y-4">
+                {/* QR Scanner */}
+                <div className="border-t border-gray-700 pt-6 mt-6">
+                  <button 
+                    className="w-full bg-purple-600 hover:bg-purple-700 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2"
+                    onClick={() => setShowScanner(true)}
+                  >
+                    📷 Scan QR Code
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Scanned Data Display */}
-        {scannedData && (
-          <div className="mt-8 bg-gray-800 rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-4">Contact Information</h2>
-            <div className="bg-gray-700 rounded-lg p-4">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-gray-400">Level {scannedData.level}:</span>
-                <span className="text-sm bg-blue-600 px-2 py-1 rounded">{scannedData.dataType}</span>
+        {/* Business Card Preview (Conditional based on display mode) */}
+        {displayMode === 'card' ? (
+          <div className="bg-gray-800 rounded-lg p-6 mb-6">
+            <h3 className="text-xl font-semibold mb-4 text-white">
+              🎴 Business Card Preview
+            </h3>
+            
+            <div className="bg-white rounded-lg p-6 max-w-md mx-auto shadow-lg">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h4 className="text-xl font-bold text-gray-800">Your Name</h4>
+                  <p className="text-gray-600">Your Title</p>
+                  <p className="text-gray-600">Your Company</p>
+                </div>
+                <div className="text-right">
+                  <div className={`w-20 h-20 ${qrCodeType === 'trusted' ? 'bg-red-200' : 'bg-gray-200'} rounded flex items-center justify-center`}>
+                    <span className="text-xs text-gray-600">QR</span>
+                  </div>
+                </div>
               </div>
-              <p className="text-lg">{scannedData.data}</p>
+              
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-700">Privacy Code:</span>
+                  <div className="flex space-x-1">
+                    {[1,2,3,4,5].map(i => (
+                      <div key={i} className="w-8 h-8 border-2 border-gray-400 rounded flex items-center justify-center">
+                        <span className="text-gray-400 text-xs">_</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                  {qrCodeType === 'trusted' ? 'Red QR = Trackable interactions' : 'Standard QR = Private by default'}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          // Mobile QR Display Interface
+          <div className="bg-gray-800 rounded-lg p-6 mb-6">
+            <h3 className="text-xl font-semibold mb-4 text-white">
+              📱 Mobile QR Display
+            </h3>
+            
+            <div className="text-center mb-6">
+              <p className="text-gray-300 mb-4">
+                When you run out of physical cards, show this QR code on your phone
+              </p>
+              
+              <button
+                onClick={generateMobileQR}
+                disabled={!activeCard}
+                className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-3 px-8 rounded-lg transition-all duration-200"
+              >
+                📱 Show Mobile QR Code
+              </button>
             </div>
             
-            {scannedData.level < 3 && (
-              <button 
-                className="mt-4 bg-green-600 hover:bg-green-700 px-4 py-2 rounded transition-colors"
-                onClick={() => progressiveReveal('current_link', scannedData.level + 1)}
-              >
-                Reveal More (Level {scannedData.level + 1})
-              </button>
-            )}
+            <div className="bg-gray-700 rounded-lg p-4">
+              <h4 className="font-semibold text-white mb-2">How it works:</h4>
+              <ul className="text-gray-300 text-sm space-y-1">
+                <li>• Generate your privacy code as usual</li>
+                <li>• Tap "Show Mobile QR Code" above</li>
+                <li>• Show your phone screen to the person</li>
+                <li>• Tell them the 5-digit code verbally</li>
+                <li>• Same privacy controls as physical cards</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* Mobile QR Full-Screen Modal */}
+        {showMobileQR && (
+          <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-8 max-w-sm mx-4 text-center">
+              <h3 className="text-2xl font-bold text-gray-800 mb-4">SelectConnect</h3>
+              
+              {/* Large QR Code Display */}
+              <div className="w-64 h-64 bg-gray-200 rounded-lg flex items-center justify-center mb-4 mx-auto">
+                <div className="text-center">
+                  <div className="text-6xl mb-2">📱</div>
+                  <p className="text-gray-600 text-sm">QR Code</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {qrCodeType === 'trusted' ? '🔴 Trackable' : '⚫ Private'}
+                  </p>
+                </div>
+              </div>
+              
+              {/* Generated Code Display */}
+              {generatedCode && (
+                <div className="mb-4">
+                  <p className="text-gray-600 text-sm mb-2">Tell them this code:</p>
+                  <div className="text-3xl font-mono font-bold text-blue-600 mb-2">
+                    {generatedCode}
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {privacyLevel} • Valid 24hrs
+                  </p>
+                </div>
+              )}
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowMobileQR(false)}
+                  className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-lg transition-all"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    navigator.clipboard?.writeText(mobileQRData);
+                  }}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-all"
+                >
+                  Share
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
