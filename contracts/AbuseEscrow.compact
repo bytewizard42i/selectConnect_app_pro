@@ -1,23 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
+// ============================================================================
+// AbuseEscrow Contract - Economic Spam Prevention for SelectConnect Protocol
+// ============================================================================
+// Version: 1.0.0
+// Compact Language Version: 0.16
+//
+// PURPOSE:
+// This contract implements an economic abuse prevention system for the SelectConnect
+// protocol. It requires potential message senders to post refundable bonds before
+// contacting card holders, creating financial disincentives for spam and harassment.
+//
+// CORE MECHANICS:
+// 1. Bond Posting: Senders stake tokens before initiating contact
+// 2. Dynamic Pricing: Bond amounts increase based on sender's abuse history
+// 3. Bond Slashing: Admins can confiscate bonds for verified abuse
+// 4. Safety Pools: Slashed funds accumulate to compensate victims
+// 5. Reputation Tracking: Persistent scoring system for sender behavior
+//
+// PRIVACY MODEL:
+// - Public: Bond IDs, amounts, timestamps, aggregate reputation metrics
+// - Private: Sender identities (hidden behind cryptographic commitments)
+// - Selective Disclosure: Only abuse evidence hashes are revealed on-chain
+//
+// ECONOMIC SECURITY:
+// - Minimum bond amounts configurable per card (3-100 ADA typical range)
+// - Risk multipliers increase bonds by 50% per previous slash
+// - Safety pools provide victim compensation from slashed bonds
+// - Time-limited bonds with automatic expiry for honest interactions
+//
+// INTEGRATION:
+// This contract works in conjunction with SelectConnectProtocol.compact to provide
+// comprehensive privacy-preserving contact management with economic accountability.
+// ============================================================================
 
 pragma language_version 0.16;
 
 import CompactStandardLibrary;
-
-//==============================================
-// AbuseEscrow (SelectConnect) — Compact v0.16 example
-// ----------------------------------------------
-// Purpose:
-//  - Require senders to post a refundable "abuse bond" before contacting a SelectConnect.
-//  - Bonds deter spam/abuse. Honest interaction => refund. Abuse => slash the bond.
-// What is public vs private:
-//  - Public: bond IDs, card IDs, amounts, timestamps, minimal reputation counters.
-//  - Private: sender identity is hidden behind senderCommit (a commitment produced off-chain).
-// How to read:
-//  - export ledger ...   => on-chain public state
-//  - constructor()       => initializes state at deploy
-//  - witness ...         => private inputs provided by the caller (not written publicly)
-//  - export circuit ...  => public entry points that assert conditions and update state
 
 // Public on-chain state
 // round: epoch counter that can be used to rotate keys/authorization semantics across time

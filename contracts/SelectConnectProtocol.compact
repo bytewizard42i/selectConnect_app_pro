@@ -682,9 +682,9 @@ export circuit slashBond(bondId: Bytes<32>): [] {
     const evidence = abuseEvidence();
     const evidenceHash = persistentHash<Opaque<'bytes'>>(evidence);
     
-    // Update bond state
+    // Update bond state to POSTED (active and available for slashing if abuse occurs)
     remove(bond_meta, bondId);
-    insert(bond_meta, bondId, (cardId, senderCommit, amount, postedAt, expiresAt, BondState.SLASHED));
+    insert(bond_meta, bondId, (cardId, senderCommit, amount, postedAt, expiresAt, BondState.ACTIVE));
     
     // Update sender reputation
     const now = currentTimestamp();

@@ -3,29 +3,46 @@ import { MidnightProvider, Contract } from '@midnight-ntwrk/midnight-js-sdk';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 
-// Midnight SDK types (placeholders until SDK is available)
+/**
+ * Midnight SDK Type Definitions for SelectConnect Frontend
+ * 
+ * These interfaces define the expected structure of the Midnight SDK
+ * for privacy-preserving blockchain interactions. They handle zero-knowledge
+ * proof generation, contract calls, and wallet integration.
+ */
+
+/** 
+ * Midnight blockchain provider for contract and network interactions
+ * Handles zero-knowledge proof generation automatically for all operations
+ */
 interface MidnightProvider {
+  /** Get contract instance for SelectConnect protocol interactions */
   getContract(address: string): Promise<MidnightContract>;
+  /** Get signer for transaction signing and proof generation */
   getSigner(): Promise<MidnightSigner>;
 }
 
+/** 
+ * Cryptographic signer for Midnight transactions
+ * Generates zero-knowledge proofs while maintaining user privacy
+ */
 interface MidnightSigner {
+  /** Get user's public address (privacy-preserving identifier) */
   getAddress(): Promise<string>;
+  /** Sign messages for authentication and authorization */
   signMessage(message: string): Promise<string>;
 }
 
+/** 
+ * Smart contract interface for SelectConnect protocol
+ * All method calls automatically generate ZK proofs for privacy
+ */
 interface MidnightContract {
+  /** Call contract methods with automatic proof generation */
   call(method: string, args: any[]): Promise<any>;
 }
 
-// Declare global Midnight wallet
-declare global {
-  interface Window {
-    midnight?: {
-      provider: MidnightProvider;
-    };
-  }
-}
+// Note: Global Midnight wallet interface is defined in types/midnight.d.ts
 
 // Types for our SelectConnect data structure
 interface SelectConnectData {

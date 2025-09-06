@@ -57,11 +57,13 @@ SelectConnect leverages Midnight's Compact v0.16 to create **22 ZK circuits** th
 
 ### Core Components
 
-1. **SelectConnectProtocol.compact** (813 lines)
+1. **SelectConnectProtocol.compact** (967 lines)
    - Unified smart contract with privacy-first design
    - 22 ZK circuits for complete privacy preservation
    - Abuse bond staking with reputation system
    - Progressive reveal through encrypted Merkle levels
+   - Privacy routing with 5-digit anonymous access codes
+   - Rescindable credentials with private revocation reasons
    
 2. **Midnight Proof Server** (Docker)
    - Local proof generation using official Midnight image
@@ -156,11 +158,12 @@ SelectConnect leverages Midnight's Compact v0.16 to create **22 ZK circuits** th
 
 ## 🚀 Technical Innovation
 
-### Breakthrough: Alice's Abuse Bond System
+### Breakthrough: Multi-Layer Privacy Architecture
 
 Our revolutionary **pseudonymous accountability** system solves the impossible:
 **How do you stop bad actors without compromising privacy?**
 
+#### 1. Pseudonymous Tracking
 ```typescript
 // Sender commitment (stable per card)
 senderCommit = H(cardId || senderDidCommit || salt)
@@ -169,7 +172,29 @@ senderCommit = H(cardId || senderDidCommit || salt)
 senderNull = PRF(secretKey, cardId)
 ```
 
-**Result**: We can track and punish repeat offenders across a single card context while preserving cross-context privacy. A harasser at DevCon can't be tracked to their dating profile, but they can be stopped from harassing multiple DevCon attendees.
+#### 2. Privacy Routing Innovation
+```typescript
+// 5-digit anonymous access codes
+routeCode = generateRouteCode(cardId, privacyLevel, salt)
+
+// Trackable vs non-trackable interactions
+interactionRecord = {
+  routeCode, senderCommit, timestamp, 
+  interactionType, reportedAsSpam
+}
+```
+
+#### 3. Progressive Reveal with Merkle Proofs
+```typescript
+// Encrypted reveal levels stored in Merkle tree
+levelCommit = persistentCommit([DOMAIN_LEVEL, levelData, randomness])
+treeInsert(reveal_tree, levelCommit)
+
+// Recipients prove access to specific levels
+assert(treeContains(reveal_tree, levelCommit))
+```
+
+**Result**: We can track and punish repeat offenders across a single card context while preserving cross-context privacy. A harasser at DevCon can't be tracked to their dating profile, but they can be stopped from harassing multiple DevCon attendees. Privacy routes enable anonymous access while maintaining spam protection.
 
 ### Getting Started
 
@@ -293,7 +318,7 @@ circuit accessNextLevel(linkId, currentTime, levelData) -> revealedData
 circuit revokeLink(cardId, linkId) -> []
 ```
 
-### Abuse Bond Staking
+### Abuse Bond Staking & Privacy Routing
 
 ```typescript
 // Post bond to contact card holder
@@ -304,6 +329,15 @@ circuit refundBond(bondId) -> []
 
 // Slash bond for abuse (admin only)
 circuit slashBond(bondId) -> []
+
+// Generate 5-digit privacy route for anonymous access
+circuit generatePrivacyRoute(cardId, privacyLevel, ttl, isTrackable) -> routeCode
+
+// Access card via privacy route
+circuit accessViaPrivacyRoute(routeCode, senderCommit) -> (cardId, privacyLevel, isTrackable)
+
+// Report spam via trackable privacy route
+circuit reportSpamViaRoute(routeCode, senderCommit, evidenceHash) -> []
 ```
 
 ### Read-Only Queries
@@ -319,6 +353,10 @@ circuit getCardPolicy(cardId) -> (requiresBond, minBond, defaultTTL, maxSlashes)
 circuit getBondState(bondId) -> BondState
 circuit getSenderReputation(senderCommit) -> (totalBonds, slashedCount)
 circuit getSafetyPool(cardId) -> balance
+
+// Privacy routing queries
+circuit getPrivacyRoute(routeCode) -> PrivacyRoute
+circuit getInteractionRecord(interactionId) -> InteractionRecord
 ```
 
 ## 🎯 Judge Evaluation Criteria
