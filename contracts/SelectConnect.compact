@@ -5,7 +5,7 @@ pragma language_version 0.16;
 import CompactStandardLibrary;
 
 // ==============================================
-// NoirCard — Compact v0.16 example
+// SelectConnect Compact v0.16 example
 // --------------------------------
 // Purpose:
 //  - Privacy-preserving digital business card.
