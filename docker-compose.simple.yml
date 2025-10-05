@@ -1,12 +1,10 @@
-version: '3.8'
-
 services:
   # Midnight Local Proof Server (simplified)
   midnight-proof-server:
     image: midnightnetwork/proof-server:latest
     container_name: midnight-proof-server
     ports:
-      - "6300:6300"  # Proof server port (per Midnight docs)
+      - "127.0.0.1:6300:6300"  # Proof server port (per Midnight docs, localhost only)
     environment:
       - PROOF_SERVER_PORT=6300
       - LOG_LEVEL=info
@@ -22,13 +20,27 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # Redis for Relay Service
   redis:
-    image: redis:7-alpine
-    container_name: noircard-redis
+    image: redis:7.4-alpine
+    container_name: selectconnect-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"  # Only accessible from host
     networks:
       - selectconnect-network
     command: redis-server --appendonly yes
@@ -37,6 +49,21 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   selectconnect-network:
