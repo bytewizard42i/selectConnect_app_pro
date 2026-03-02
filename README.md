@@ -14,8 +14,8 @@
 
 ```bash
 # Clone and start the demo
-git clone https://github.com/bytewizard42i/utils_selectConnect_app_pro.git
-cd utils_selectConnect_app_pro
+git clone https://github.com/bytewizard42i/selectConnect_app_pro.git
+cd selectConnect_app_pro
 chmod +x start-hackathon-demo.sh
 ./start-hackathon-demo.sh
 ```
@@ -30,17 +30,6 @@ Every year:
 
 **SelectConnect changes everything.**
 
-## 🚨 The Problem We Solve
-
-**Current networking is broken:**
-- Women receive 5x more harassment after sharing contact info at events
-- 67% of professionals report spam after conference networking
-- Dating apps expose users to stalking and abuse
-- Sales professionals struggle with low-quality leads
-- No accountability for bad actors who abuse shared information
-
-**SelectConnect changes everything.**
-
 ## 🎯 Revolutionary Solution: Economic Accountability + Privacy
 
 SelectConnect combines **progressive contact revelation** with **economic abuse deterrence** to create the first truly safe contact sharing platform. Built on Midnight's privacy-preserving blockchain, it enables secure, accountable interactions without compromising personal privacy.
@@ -49,7 +38,7 @@ SelectConnect combines **progressive contact revelation** with **economic abuse 
 
 ### Zero-Knowledge Proof Implementation
 
-SelectConnect leverages Midnight's Compact v0.16 to create **22 ZK circuits** that enable:
+SelectConnect leverages Midnight's Compact language to create **22 ZK circuits** that enable:
 - **Private Authorization**: Prove ownership without revealing identity
 - **Commitment-Based Storage**: Contact info stored as cryptographic commitments
 - **Selective Disclosure**: Progressive reveal with Merkle tree proofs
@@ -224,8 +213,8 @@ assert(treeContains(reveal_tree, levelCommit))
 
 ```bash
 # Clone and setup
-git clone https://github.com/bytewizard42i/utils_selectConnect_app_pro.git
-cd utils_selectConnect_app_pro && npm install
+git clone https://github.com/bytewizard42i/selectConnect_app_pro.git
+cd selectConnect_app_pro && npm install
 
 # Configure environment
 cp .env.example .env
@@ -407,17 +396,17 @@ circuit getInteractionRecord(interactionId) -> InteractionRecord
 
 ## 🚀 Next Steps & Roadmap
 
-### Immediate (Q1 2025)
+### Immediate (Q1 2026)
 - **Midnight Mainnet Deployment**: Launch on production network
 - **Conference Pilot Program**: Partner with 5 major tech conferences
 - **Mobile App Release**: iOS/Android apps for seamless QR scanning
 
-### Short Term (Q2-Q3 2025)
+### Short Term (Q2-Q3 2026)
 - **Dating Platform Integration**: Partner with privacy-focused dating apps
 - **Enterprise Sales Tools**: B2B lead qualification platform
 - **Guardian Network Launch**: Decentralized moderation system
 
-### Long Term (Q4 2025+)
+### Long Term (Q4 2026+)
 - **Cross-Chain Expansion**: Ethereum, Polygon, Solana integration
 - **AI-Powered Safety**: Machine learning for harassment detection
 - **Global Standards**: Establish SelectConnect as networking safety protocol
