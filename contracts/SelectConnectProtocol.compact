@@ -25,7 +25,7 @@
 // - sender: Party posting a bond to initiate contact
 // ============================================================================
 
-pragma language_version 0.16;
+pragma language_version >= 0.16 && <= 0.18;
 
 import CompactStandardLibrary;
 
@@ -58,7 +58,8 @@ enum CredentialState {
 
 // Bond states for tracking
 enum BondState {
-    ACTIVE,     // Bond posted, not yet released
+    POSTED,     // Bond posted, not yet released
+    ACTIVE,     // Bond active and verified
     REFUNDED,   // Bond returned to sender
     SLASHED     // Bond confiscated due to abuse
 }
@@ -268,9 +269,9 @@ circuit calculateRequiredBond(
     senderCommit: Bytes<32>
 ): Uint<64> {
     // Check sender reputation
-    let (commit, totalBonds, slashedCount, lastSlash, totalSlashed) = 
+    let (totalBonds, slashedCount, lastSlash, totalSlashed) = 
         getOrDefault(sender_reputation, senderCommit, 
-            (senderCommit, 0u32, 0u32, 0u64, 0u64));
+            (0u32, 0u32, 0u64, 0u64));
     
     // No history = minimum bond
     if (slashedCount == 0u32) {
@@ -492,7 +493,8 @@ export circuit generateAccessLink(
     ttl: Uint<64>
 ): Bytes<32> {
     assert(contains(cards, cardId), "Card does not exist");
-    assert(contains(card_states, (cardId, CardState.ACTIVE)), "Card not active");
+    let cardState = get(card_states, cardId);
+    assert(cardState == CardState.ACTIVE, "Card not active");
     
     // Derive recipient ID from their secret
     const recipientSec = recipientSecret();
@@ -665,9 +667,9 @@ export circuit slashBond(bondId: Bytes<32>): [] {
     const evidence = abuseEvidence();
     const evidenceHash = persistentHash<Opaque<'bytes'>>(evidence);
     
-    // Update bond state to POSTED (active and available for slashing if abuse occurs)
+    // Update bond state to SLASHED
     remove(bond_meta, bondId);
-    insert(bond_meta, bondId, (cardId, senderCommit, amount, postedAt, expiresAt, BondState.ACTIVE));
+    insert(bond_meta, bondId, (cardId, senderCommit, amount, postedAt, expiresAt, BondState.SLASHED));
     
     // Update sender reputation
     const now = currentTimestamp();
@@ -911,11 +913,7 @@ circuit generateRouteCode(cardId: Bytes<32>, privacyLevel: PrivacyLevel, salt: B
     return (codeNum as Bytes<32>);
 }
 
-// Random value witness for route generation
-witness randomValue(): Bytes<32>;
-
-// Current timestamp witness
-witness currentTimestamp(): Uint<64>;
+// NOTE: randomValue() and currentTimestamp() witnesses declared above (lines 183, 197)
 
 // ============================================================================
 // READ-ONLY QUERIES (View Functions)
