@@ -1,0 +1,531 @@
+// ============================================================================
+// SelectConnect MVP — Privacy-Preserving Contact Sharing
+// ============================================================================
+// Version: 2.0.0-mvp
+// Compact Language Version: 0.16–0.18
+// Compilation Status: ✅ PASSES Compact compiler (syntax-only, skipZk)
+//
+// PURPOSE:
+// Minimal viable contract with 8 essential circuits + 3 queries:
+//   1. createCard         — Create a privacy-preserving contact card
+//   2. postBond           — Stake value to request contact
+//   3. refundBond         — Return bond after good interaction
+//   4. slashBond          — Penalize abuse
+//   5. addRevealLevel     — Configure progressive reveal tiers
+//   6. accessNextLevel    — Unlock next reveal tier via access link
+//   7. generateAccessLink — Create shareable time-limited link
+//   8. revokeLink         — Cut off access
+//   Q1. isCardActive      — Check card status
+//   Q2. getBondState      — Check bond status
+//   Q3. getSafetyPool     — Check safety pool balance
+//
+// CUT FROM FULL CONTRACT (add back in v2):
+//   - Privacy routing (5-digit codes)
+//   - Credential management (requires DIDz integration)
+//   - Card suspend/reactivate lifecycle
+//   - Pseudonym updates
+//   - Spam reporting via routes
+//
+// PRIVACY MODEL:
+//   - Public: card IDs, card states, bond states, counters
+//   - Private: admin identity, sender identity, contact data
+//   - Selective Disclosure: only explicitly disclosed data goes on-chain
+//
+// COMPILER NOTES (lessons learned during validation):
+//   - No module-level `const` — define domain tags inside circuits
+//   - No literal suffixes (0u32, 0u64) — use (0 as Uint<32>) casts
+//   - All witness-derived values must be disclose()'d before ledger ops
+//   - persistentCommit takes two args: (value, nonce)
+//   - Admin auth is inlined per-circuit (helper circuits can't
+//     satisfy the compiler's disclosure tracking across call boundaries)
+//   - Tuple return types not supported for exported circuits
+// ============================================================================
+
+pragma language_version >= 0.16 && <= 0.18;
+
+import CompactStandardLibrary;
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+// Card lifecycle states
+export enum CardState {
+    UNSET,      // Never created
+    ACTIVE,     // Normal operation
+    REVOKED     // Permanently disabled
+}
+
+// Bond states for abuse prevention tracking
+export enum BondState {
+    POSTED,     // Bond staked, awaiting resolution
+    REFUNDED,   // Bond returned to sender (good interaction)
+    SLASHED     // Bond confiscated (abuse detected)
+}
+
+// ============================================================================
+// PUBLIC LEDGER STATE
+// ============================================================================
+
+// Global epoch counter for anti-linkability across operations
+export ledger epoch: Counter;
+
+// --- Card Management ---
+export ledger cards: Set<Bytes<32>>;
+export ledger card_states: Map<Bytes<32>, CardState>;
+export ledger card_admins: Map<Bytes<32>, Bytes<32>>;
+export ledger policy_requires_bond: Map<Bytes<32>, Boolean>;
+export ledger policy_min_bond: Map<Bytes<32>, Uint<64>>;
+
+// --- Progressive Reveal ---
+// Level counter uses Uint<32> (Uint<8> literals not supported)
+export ledger reveal_level_count: Map<Bytes<32>, Uint<32>>;
+export ledger reveal_commits: Map<Bytes<32>, Bytes<32>>;
+
+// --- Access Links ---
+export ledger links: Set<Bytes<32>>;
+export ledger link_card: Map<Bytes<32>, Bytes<32>>;
+export ledger link_recipient: Map<Bytes<32>, Bytes<32>>;
+export ledger link_expires: Map<Bytes<32>, Uint<64>>;
+export ledger link_revoked: Map<Bytes<32>, Boolean>;
+export ledger link_level: Map<Bytes<32>, Uint<32>>;
+
+// --- Abuse Prevention (Bond Staking) ---
+export ledger bonds: Set<Bytes<32>>;
+export ledger bond_card: Map<Bytes<32>, Bytes<32>>;
+export ledger bond_sender: Map<Bytes<32>, Bytes<32>>;
+export ledger bond_amount: Map<Bytes<32>, Uint<64>>;
+export ledger bond_expires: Map<Bytes<32>, Uint<64>>;
+export ledger bond_state: Map<Bytes<32>, BondState>;
+export ledger reputation_total: Map<Bytes<32>, Uint<32>>;
+export ledger reputation_slashed: Map<Bytes<32>, Uint<32>>;
+export ledger safety_pools: Map<Bytes<32>, Uint<64>>;
+export ledger abuse_counters: Map<Bytes<32>, Uint<64>>;
+
+// ============================================================================
+// CONSTRUCTOR
+// ============================================================================
+
+constructor() {
+    epoch.increment(1);
+}
+
+// ============================================================================
+// WITNESS FUNCTIONS (Private Inputs — never revealed on-chain)
+// ============================================================================
+
+witness adminSecret(): Bytes<32>;
+witness recipientSecret(): Bytes<32>;
+witness senderSecret(): Bytes<32>;
+witness randomValue(): Bytes<32>;
+witness currentTimestamp(): Uint<64>;
+
+// ============================================================================
+// CIRCUIT 1: CREATE CARD
+// ============================================================================
+// Create a new SelectConnect contact card.
+// Admin identity is derived from secret — never stored in plaintext.
+
+export circuit createCard(
+    aliasHash: Bytes<32>,
+    requiresBond: Boolean,
+    minBondAmount: Uint<64>
+): Bytes<32> {
+    const secret = adminSecret();
+    const domainCard = pad(32, "selectconnect:card:v2");
+
+    // Derive admin ID: hash(domain, epoch, secret)
+    const adminId = persistentHash<Vector<3, Bytes<32>>>([
+        domainCard,
+        (epoch.read() as Field) as Bytes<32>,
+        secret
+    ]);
+
+    // Generate card ID: hash(domain, adminId, aliasHash)
+    // Disclose before any ledger operations (compiler requirement)
+    const cardId = disclose(persistentHash<Vector<3, Bytes<32>>>([
+        domainCard,
+        adminId,
+        disclose(aliasHash)
+    ]));
+    const dAdminId = disclose(adminId);
+
+    assert(!cards.member(cardId), "Card already exists");
+
+    // Create card with initial state
+    cards.insert(cardId);
+    card_states.insert(cardId, CardState.ACTIVE);
+    card_admins.insert(cardId, dAdminId);
+    policy_requires_bond.insert(cardId, disclose(requiresBond));
+    policy_min_bond.insert(cardId, disclose(minBondAmount));
+    reveal_level_count.insert(cardId, (0 as Uint<32>));
+    abuse_counters.insert(cardId, (0 as Uint<64>));
+    safety_pools.insert(cardId, (0 as Uint<64>));
+
+    return cardId;
+}
+
+// ============================================================================
+// CIRCUIT 2: POST BOND
+// ============================================================================
+// Stake value to request contact with a card holder.
+// Sender identity is pseudonymous — same secret = same commitment.
+
+export circuit postBond(
+    cardId: Bytes<32>,
+    amount: Uint<64>,
+    ttl: Uint<64>
+): Bytes<32> {
+    const cid = disclose(cardId);
+    const amt = disclose(amount);
+    const bondTtl = disclose(ttl);
+
+    // Verify card exists and is active
+    assert(cards.member(cid), "Card does not exist");
+    const cardState = card_states.lookup(cid);
+    assert(cardState == CardState.ACTIVE, "Card not active");
+
+    // Check bond policy
+    const requiresBond = policy_requires_bond.lookup(cid);
+    assert(requiresBond, "Card does not require bonds");
+    const minBond = policy_min_bond.lookup(cid);
+    assert(amt >= minBond, "Insufficient bond amount");
+
+    // Derive pseudonymous sender commitment
+    const senderSec = senderSecret();
+    const domainBond = pad(32, "selectconnect:bond:v2");
+    const senderCommit = disclose(persistentHash<Vector<2, Bytes<32>>>([
+        domainBond, senderSec
+    ]));
+
+    // Generate bond ID
+    const now = disclose(currentTimestamp());
+    const bondId = disclose(persistentHash<Vector<4, Bytes<32>>>([
+        domainBond, cid, senderCommit, (now as Field) as Bytes<32>
+    ]));
+    const expiresAt = (now + bondTtl) as Uint<64>;
+
+    // Store bond
+    bonds.insert(bondId);
+    bond_card.insert(bondId, cid);
+    bond_sender.insert(bondId, senderCommit);
+    bond_amount.insert(bondId, amt);
+    bond_expires.insert(bondId, expiresAt);
+    bond_state.insert(bondId, BondState.POSTED);
+
+    // Update sender reputation
+    if (reputation_total.member(senderCommit)) {
+        const currentTotal = reputation_total.lookup(senderCommit);
+        reputation_total.remove(senderCommit);
+        reputation_total.insert(senderCommit, (currentTotal + 1) as Uint<32>);
+    } else {
+        reputation_total.insert(senderCommit, (1 as Uint<32>));
+        reputation_slashed.insert(senderCommit, (0 as Uint<32>));
+    }
+
+    return bondId;
+}
+
+// ============================================================================
+// CIRCUIT 3: REFUND BOND
+// ============================================================================
+// Return a bond after successful interaction. Admin only (simplified for MVP).
+
+export circuit refundBond(bondId: Bytes<32>): [] {
+    const bid = disclose(bondId);
+    assert(bonds.member(bid), "Bond does not exist");
+
+    const state = bond_state.lookup(bid);
+    assert(state == BondState.POSTED, "Bond not refundable");
+
+    // Verify admin authorization (inline — compiler requires it)
+    const cardId = bond_card.lookup(bid);
+    const secret = adminSecret();
+    const domainCard = pad(32, "selectconnect:card:v2");
+    const adminId = disclose(persistentHash<Vector<3, Bytes<32>>>([
+        domainCard,
+        (epoch.read() as Field) as Bytes<32>,
+        secret
+    ]));
+    const storedAdminId = card_admins.lookup(cardId);
+    assert(storedAdminId == adminId, "Not authorized as card admin");
+
+    // Update bond state
+    bond_state.remove(bid);
+    bond_state.insert(bid, BondState.REFUNDED);
+    epoch.increment(1);
+}
+
+// ============================================================================
+// CIRCUIT 4: SLASH BOND
+// ============================================================================
+// Penalize abuse by confiscating a bond. Admin only.
+// Slashed amount goes to the card's safety pool.
+
+export circuit slashBond(bondId: Bytes<32>): [] {
+    const bid = disclose(bondId);
+    assert(bonds.member(bid), "Bond does not exist");
+
+    const state = bond_state.lookup(bid);
+    assert(state == BondState.POSTED, "Bond not slashable");
+
+    // Verify admin authorization (inline)
+    const cardId = bond_card.lookup(bid);
+    const secret = adminSecret();
+    const domainCard = pad(32, "selectconnect:card:v2");
+    const adminId = disclose(persistentHash<Vector<3, Bytes<32>>>([
+        domainCard,
+        (epoch.read() as Field) as Bytes<32>,
+        secret
+    ]));
+    const storedAdminId = card_admins.lookup(cardId);
+    assert(storedAdminId == adminId, "Not authorized as card admin");
+
+    // Update bond state
+    bond_state.remove(bid);
+    bond_state.insert(bid, BondState.SLASHED);
+
+    // Update sender reputation
+    const senderCommit = bond_sender.lookup(bid);
+    if (reputation_slashed.member(senderCommit)) {
+        const currentSlashed = reputation_slashed.lookup(senderCommit);
+        reputation_slashed.remove(senderCommit);
+        reputation_slashed.insert(senderCommit, (currentSlashed + 1) as Uint<32>);
+    }
+
+    // Add slashed amount to safety pool
+    const slashedAmount = bond_amount.lookup(bid);
+    if (safety_pools.member(cardId)) {
+        const currentPool = safety_pools.lookup(cardId);
+        safety_pools.remove(cardId);
+        safety_pools.insert(cardId, (currentPool + slashedAmount) as Uint<64>);
+    }
+
+    // Increment abuse counter
+    if (abuse_counters.member(cardId)) {
+        const currentCount = abuse_counters.lookup(cardId);
+        abuse_counters.remove(cardId);
+        abuse_counters.insert(cardId, (currentCount + 1) as Uint<64>);
+    }
+
+    epoch.increment(1);
+}
+
+// ============================================================================
+// CIRCUIT 5: ADD REVEAL LEVEL
+// ============================================================================
+// Configure a progressive reveal tier. Admin only.
+// Each level stores a hiding commitment — the actual data stays off-chain.
+
+export circuit addRevealLevel(cardId: Bytes<32>, levelData: Bytes<32>): [] {
+    const cid = disclose(cardId);
+    const ld = disclose(levelData);
+
+    // Verify admin authorization (inline)
+    const secret = adminSecret();
+    const domainCard = pad(32, "selectconnect:card:v2");
+    const adminId = disclose(persistentHash<Vector<3, Bytes<32>>>([
+        domainCard,
+        (epoch.read() as Field) as Bytes<32>,
+        secret
+    ]));
+    const storedAdminId = card_admins.lookup(cid);
+    assert(storedAdminId == adminId, "Not authorized as card admin");
+
+    const cardState = card_states.lookup(cid);
+    assert(cardState == CardState.ACTIVE, "Card not active");
+
+    // Compute level key: hash(domain, cardId, levelIndex)
+    const currentCount = reveal_level_count.lookup(cid);
+    const domainLevel = pad(32, "selectconnect:level:v2");
+    const levelKey = persistentHash<Vector<3, Bytes<32>>>([
+        domainLevel, cid, (currentCount as Field) as Bytes<32>
+    ]);
+
+    // Create hiding commitment: persistentCommit(value, nonce)
+    const r = randomValue();
+    const levelCommit = disclose(persistentCommit<Vector<2, Bytes<32>>>(
+        [domainLevel, ld], r
+    ));
+
+    // Store commitment and increment counter
+    reveal_commits.insert(levelKey, levelCommit);
+    reveal_level_count.remove(cid);
+    reveal_level_count.insert(cid, (currentCount + 1) as Uint<32>);
+
+    epoch.increment(1);
+}
+
+// ============================================================================
+// CIRCUIT 6: ACCESS NEXT LEVEL
+// ============================================================================
+// Unlock the next reveal tier through an access link. Recipient only.
+// Verifies link validity, recipient identity, and level commitment.
+
+export circuit accessNextLevel(
+    linkId: Bytes<32>,
+    currentTime: Uint<64>,
+    levelData: Bytes<32>
+): Bytes<32> {
+    const lid = disclose(linkId);
+    const now = disclose(currentTime);
+
+    // Verify link exists and is valid
+    assert(links.member(lid), "Link does not exist");
+    const isRevoked = link_revoked.lookup(lid);
+    assert(!isRevoked, "Link has been revoked");
+    const expiresAt = link_expires.lookup(lid);
+    assert(now < expiresAt, "Link has expired");
+
+    // Verify recipient authorization
+    const recipientSec = recipientSecret();
+    const domainLink = pad(32, "selectconnect:link:v2");
+    const derivedRecipientId = disclose(persistentHash<Vector<3, Bytes<32>>>([
+        domainLink,
+        (epoch.read() as Field) as Bytes<32>,
+        recipientSec
+    ]));
+    const storedRecipientId = link_recipient.lookup(lid);
+    assert(derivedRecipientId == storedRecipientId, "Not authorized recipient");
+
+    // Verify level commitment
+    const currentLevel = link_level.lookup(lid);
+    const cardId = link_card.lookup(lid);
+    const domainLevel = pad(32, "selectconnect:level:v2");
+    const levelKey = persistentHash<Vector<3, Bytes<32>>>([
+        domainLevel, cardId, (currentLevel as Field) as Bytes<32>
+    ]);
+    assert(reveal_commits.member(levelKey), "No reveal level at this index");
+    const storedCommit = reveal_commits.lookup(levelKey);
+
+    // Verify provided data matches the stored commitment
+    const r = randomValue();
+    const dLevelData = disclose(levelData);
+    const expectedCommit = disclose(persistentCommit<Vector<2, Bytes<32>>>(
+        [domainLevel, dLevelData], r
+    ));
+    assert(storedCommit == expectedCommit, "Invalid reveal level data");
+
+    // Advance link to next level
+    link_level.remove(lid);
+    link_level.insert(lid, (currentLevel + 1) as Uint<32>);
+
+    return dLevelData;
+}
+
+// ============================================================================
+// CIRCUIT 7: GENERATE ACCESS LINK
+// ============================================================================
+// Create a shareable, time-limited link to a card.
+// Links are bound to a specific recipient and expire after TTL.
+
+export circuit generateAccessLink(
+    cardId: Bytes<32>,
+    createdAt: Uint<64>,
+    ttl: Uint<64>
+): Bytes<32> {
+    const cid = disclose(cardId);
+    const created = disclose(createdAt);
+    const linkTtl = disclose(ttl);
+
+    assert(cards.member(cid), "Card does not exist");
+    const cardState = card_states.lookup(cid);
+    assert(cardState == CardState.ACTIVE, "Card not active");
+
+    // Derive recipient ID
+    const recipientSec = recipientSecret();
+    const domainLink = pad(32, "selectconnect:link:v2");
+    const recipientId = disclose(persistentHash<Vector<3, Bytes<32>>>([
+        domainLink,
+        (epoch.read() as Field) as Bytes<32>,
+        recipientSec
+    ]));
+
+    // Generate unique link ID
+    const linkId = disclose(persistentHash<Vector<4, Bytes<32>>>([
+        domainLink, cid, recipientId, (created as Field) as Bytes<32>
+    ]));
+    const expiresAt = (created + linkTtl) as Uint<64>;
+
+    // Store link metadata
+    links.insert(linkId);
+    link_card.insert(linkId, cid);
+    link_recipient.insert(linkId, recipientId);
+    link_expires.insert(linkId, expiresAt);
+    link_revoked.insert(linkId, false);
+    link_level.insert(linkId, (0 as Uint<32>));
+
+    return linkId;
+}
+
+// ============================================================================
+// CIRCUIT 8: REVOKE LINK
+// ============================================================================
+// Cut off access to a card via a specific link. Admin only.
+
+export circuit revokeLink(cardId: Bytes<32>, linkId: Bytes<32>): [] {
+    const cid = disclose(cardId);
+    const lid = disclose(linkId);
+
+    // Verify admin authorization (inline)
+    const secret = adminSecret();
+    const domainCard = pad(32, "selectconnect:card:v2");
+    const adminId = disclose(persistentHash<Vector<3, Bytes<32>>>([
+        domainCard,
+        (epoch.read() as Field) as Bytes<32>,
+        secret
+    ]));
+    const storedAdminId = card_admins.lookup(cid);
+    assert(storedAdminId == adminId, "Not authorized as card admin");
+
+    // Verify link exists and belongs to this card
+    assert(links.member(lid), "Link does not exist");
+    const linkedCardId = link_card.lookup(lid);
+    assert(linkedCardId == cid, "Link/card mismatch");
+
+    // Verify not already revoked
+    const isRevoked = link_revoked.lookup(lid);
+    assert(!isRevoked, "Already revoked");
+
+    // Mark as revoked
+    link_revoked.remove(lid);
+    link_revoked.insert(lid, true);
+    epoch.increment(1);
+}
+
+// ============================================================================
+// READ-ONLY QUERY CIRCUITS
+// ============================================================================
+
+// Q1: Check if a card is active
+export circuit isCardActive(cardId: Bytes<32>): Boolean {
+    const cid = disclose(cardId);
+    if (!cards.member(cid)) {
+        return disclose(false);
+    }
+    const state = card_states.lookup(cid);
+    return disclose(state == CardState.ACTIVE);
+}
+
+// Q2: Get bond state
+export circuit getBondState(bondId: Bytes<32>): BondState {
+    const bid = disclose(bondId);
+    assert(bonds.member(bid), "Bond does not exist");
+    const state = bond_state.lookup(bid);
+    return disclose(state);
+}
+
+// Q3: Get card's safety pool balance
+export circuit getSafetyPool(cardId: Bytes<32>): Uint<64> {
+    const cid = disclose(cardId);
+    assert(cards.member(cid), "Card does not exist");
+    if (safety_pools.member(cid)) {
+        const balance = safety_pools.lookup(cid);
+        return disclose(balance);
+    }
+    return disclose((0 as Uint<64>));
+}
+
+// ============================================================================
+// END OF MVP CONTRACT
+// ============================================================================
