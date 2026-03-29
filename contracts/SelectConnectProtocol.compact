@@ -25,7 +25,7 @@
 // - sender: Party posting a bond to initiate contact
 // ============================================================================
 
-pragma language_version >= 0.16 && <= 0.18;
+pragma language_version >= 0.16 && <= 0.21;
 
 import CompactStandardLibrary;
 
