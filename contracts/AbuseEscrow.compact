@@ -33,7 +33,7 @@
 // comprehensive privacy-preserving contact management with economic accountability.
 // ============================================================================
 
-pragma language_version >= 0.16 && <= 0.21;
+pragma language_version >= 0.16 && <= 0.23;
 
 import CompactStandardLibrary;
 
