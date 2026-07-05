@@ -1,4 +1,13 @@
-// Import actual Midnight SDK
+// =============================================================================
+// LEGACY (2025) — KEPT FOR REFERENCE ONLY, DO NOT WIRE UP
+//   * imports an SDK package name that never shipped
+//   * calls circuits from the ARCHIVED 2025 contracts (hasActiveBond,
+//     slashBond(bondId, evidence, nullifier), getCardPolicy...) that do not
+//     exist in the v2 contracts (contact_grant.compact / abuse_escrow.compact)
+// The v2 enforcement core is relay/GrantBondGate.ts — grant + bond checked
+// TOGETHER, written 1:1 against the v2 ledger state. Build new relay work
+// around that module.
+// =============================================================================
 import { 
     MidnightProvider, 
     MidnightSigner, 
