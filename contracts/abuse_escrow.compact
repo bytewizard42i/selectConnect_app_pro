@@ -1,0 +1,292 @@
+pragma language_version >= 0.16 && <= 0.23;
+
+import CompactStandardLibrary;
+
+// ===== abuse_escrow v2: economic spam prevention for SelectConnect =====
+//
+// WHAT THIS CONTRACT IS
+//   SelectConnect's product moat: senders post a refundable BOND before the
+//   relay will deliver their messages to a card. Honest senders get refunds;
+//   verified abusers get SLASHED, and slashed funds accumulate in a per-card
+//   SAFETY POOL for victims. Repeat offenders pay more (dynamic pricing).
+//   Works alongside contact_grant.compact — the relay checks BOTH: a live
+//   contact grant AND (if the card demands it) a live bond here.
+//
+// v2 REWRITE NOTES (July 2026) — what changed from the 2025 AbuseEscrow and why
+//   1. MODERN SYNTAX: the old file used `let`, module-level consts, and
+//      tuple-valued maps — none of which compile on compactc 0.31.1. State is
+//      now parallel maps (one fact per map, novice-inspectable), locals are
+//      `const`, and branches are ternaries.
+//   2. SECURITY FIX — sender identity: postBond used to take the sender's
+//      commitment as a parameter, letting anyone poison a stranger's
+//      reputation. Now the sender commitment is DERIVED from the caller's own
+//      secret key in-circuit (same pattern as the whole DIDz engine).
+//   3. SECURITY FIX — refund authorization: refundBond used to trust a
+//      caller-supplied `authorizerIsAdmin` boolean (!). Now an early refund
+//      must be PROVEN by the card admin's key; after expiry anyone may trigger.
+//   4. SECURITY FIX — bond ids: the old id was H(card, sender), so a sender
+//      could only ever bond once per card, forever. Bond ids are now
+//      caller-supplied and uniqueness-checked, like engine grant ids.
+//   5. NO DIVISION: risk pricing is a FLAT SURCHARGE per prior slash
+//      (min_bond + slashed_count * surcharge) instead of basis-point
+//      multiplication/division; and slashed funds now go 100% to the safety
+//      pool (v1 sent half, using division).
+//   6. CLOCK: keeper-driven epoch (same as contact_grant), not caller-supplied
+//      timestamps.
+//
+// TOKEN CUSTODY (honest caveat, unchanged from v1)
+//   Amounts here are BOOKKEEPING — actual token lock/release is wired in a
+//   later phase (token module / Zswap integration). The relay treats the
+//   bookkeeping as authoritative in the meantime.
+//
+// WHO CALLS WHAT (call map for debugging)
+//   register_card_admin  <- the card owner, once per card (binds their key)
+//   configure_card_bond  <- the card admin (min bond, TTL, surcharge)
+//   post_bond            <- a sender who wants to contact the card
+//   refund_bond          <- card admin any time; ANYONE after expiry
+//   slash_bond           <- the card admin, on verified abuse
+//   advance_epoch        <- keeper/cron
+//   derive_public_key    <- SDKs, pure helper
+
+// ---------------------------------------------------------------------------
+// PUBLIC STATE — per-card configuration + admin
+// ---------------------------------------------------------------------------
+
+// card id -> key commitment of the card's admin (same key as contact_grant).
+export ledger escrow_card_admin: Map<Bytes<32>, Bytes<32>>;
+
+// card id -> minimum bond amount required to contact this card.
+export ledger card_min_bond_amount: Map<Bytes<32>, Uint<64>>;
+
+// card id -> default bond lifetime in epochs (used when sender passes 0).
+export ledger card_default_bond_ttl_epochs: Map<Bytes<32>, Uint<64>>;
+
+// card id -> flat EXTRA amount added to the minimum per prior slash the
+// sender has on record. 0 disables dynamic pricing.
+export ledger card_repeat_offender_surcharge: Map<Bytes<32>, Uint<64>>;
+
+// ---------------------------------------------------------------------------
+// PUBLIC STATE — bonds (parallel maps, one fact per map)
+// ---------------------------------------------------------------------------
+
+// Every bond id ever created (uniqueness guard; processed bonds stay here).
+export ledger bonds: Set<Bytes<32>>;
+
+// bond id -> the card this bond targets.
+export ledger bond_card: Map<Bytes<32>, Bytes<32>>;
+
+// bond id -> the sender's key commitment (derived in-circuit, see v2 note 2).
+export ledger bond_sender: Map<Bytes<32>, Bytes<32>>;
+
+// bond id -> posted amount.
+export ledger bond_amount: Map<Bytes<32>, Uint<64>>;
+
+// bond id -> epoch after which anyone may trigger a refund.
+export ledger bond_expiry_epoch: Map<Bytes<32>, Uint<64>>;
+
+// bond id -> lifecycle flags. A bond is LIVE while both are false.
+export ledger bond_refunded: Map<Bytes<32>, Boolean>;
+export ledger bond_slashed: Map<Bytes<32>, Boolean>;
+
+// ---------------------------------------------------------------------------
+// PUBLIC STATE — reputation + victim compensation
+// ---------------------------------------------------------------------------
+
+// sender commitment -> how many bonds they have ever posted.
+export ledger sender_total_bonds: Map<Bytes<32>, Uint<64>>;
+
+// sender commitment -> how many times they have been slashed. This is the
+// number that drives the repeat-offender surcharge.
+export ledger sender_slashed_count: Map<Bytes<32>, Uint<64>>;
+
+// sender commitment -> lifetime total amount slashed from them.
+export ledger sender_total_slashed: Map<Bytes<32>, Uint<64>>;
+
+// card id -> accumulated slashed funds reserved for this card's victims.
+export ledger safety_pool_balance: Map<Bytes<32>, Uint<64>>;
+
+// Keeper-driven clock (shared pattern across the DIDz engine).
+export ledger epoch: Counter;
+
+// ---------------------------------------------------------------------------
+// PRIVATE INPUTS
+// ---------------------------------------------------------------------------
+
+// The caller's secret key — a SENDER in post_bond, the CARD ADMIN in
+// configure/slash/early-refund. Never revealed on-chain.
+witness local_secret_key(): Bytes<32>;
+
+// ---------------------------------------------------------------------------
+// HELPERS
+// ---------------------------------------------------------------------------
+
+// Same key derivation as contact_grant / the whole midnight-modules engine.
+export circuit derive_public_key(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([
+    pad(32, "midnight:mm:pk:"),
+    sk
+  ]);
+}
+
+circuit caller_public_key(): Bytes<32> {
+  return derive_public_key(local_secret_key());
+}
+
+// Shared guard: the caller must be the registered admin of this card.
+circuit check_caller_is_card_admin(card_id: Bytes<32>): [] {
+  assert(escrow_card_admin.member(card_id), "Card has no registered admin");
+  assert(
+    disclose(caller_public_key() == escrow_card_admin.lookup(card_id)),
+    "Caller is not this card's admin"
+  );
+}
+
+// Shared guard: the bond must exist and still be live (never processed).
+circuit check_bond_live(bond_id: Bytes<32>): [] {
+  assert(bonds.member(bond_id), "Bond does not exist");
+  assert(!bond_refunded.lookup(bond_id), "Bond already refunded");
+  assert(!bond_slashed.lookup(bond_id), "Bond already slashed");
+}
+
+// How many prior slashes does this sender have? (0 for first-time senders —
+// Map.lookup on a missing key aborts, so membership is checked first.)
+circuit sender_prior_slashes(sender: Bytes<32>): Uint<64> {
+  return sender_slashed_count.member(sender)
+    ? sender_slashed_count.lookup(sender)
+    : 0;
+}
+
+// ---------------------------------------------------------------------------
+// CARD SETUP
+// ---------------------------------------------------------------------------
+
+// The card owner binds their key commitment as this card's escrow admin.
+// First caller wins; re-registration is refused (no admin hijacking).
+export circuit register_card_admin(card_id: Bytes<32>): [] {
+  const public_card_id = disclose(card_id);
+  assert(!escrow_card_admin.member(public_card_id), "Card admin already registered");
+  escrow_card_admin.insert(public_card_id, disclose(caller_public_key()));
+}
+
+// Admin sets the card's bond policy. Overwrites any previous policy.
+export circuit configure_card_bond(
+  card_id: Bytes<32>,
+  min_bond_amount: Uint<64>,
+  default_ttl_epochs: Uint<64>,
+  repeat_offender_surcharge: Uint<64>
+): [] {
+  const public_card_id = disclose(card_id);
+  check_caller_is_card_admin(public_card_id);
+  card_min_bond_amount.insert(public_card_id, disclose(min_bond_amount));
+  card_default_bond_ttl_epochs.insert(public_card_id, disclose(default_ttl_epochs));
+  card_repeat_offender_surcharge.insert(public_card_id, disclose(repeat_offender_surcharge));
+}
+
+// ---------------------------------------------------------------------------
+// BONDS
+// ---------------------------------------------------------------------------
+
+// A sender posts a bond to contact a card.
+// Required amount = card minimum + (prior slashes x card surcharge), so
+// repeat offenders pay more (all in widened arithmetic, no overflow).
+// ttl_epochs of 0 means "use the card's default TTL".
+export circuit post_bond(
+  bond_id: Bytes<32>,
+  card_id: Bytes<32>,
+  amount: Uint<64>,
+  ttl_epochs: Uint<64>
+): [] {
+  const public_bond_id = disclose(bond_id);
+  const public_card_id = disclose(card_id);
+  assert(!bonds.member(public_bond_id), "Bond id already in use");
+  assert(card_min_bond_amount.member(public_card_id), "Card has no bond policy");
+
+  // The sender is whoever proves the secret key — never a parameter (v2 fix).
+  const sender = disclose(caller_public_key());
+
+  // Dynamic pricing: minimum + surcharge per prior slash.
+  const public_amount = disclose(amount);
+  assert(
+    public_amount >= card_min_bond_amount.lookup(public_card_id)
+      + sender_prior_slashes(sender)
+        * card_repeat_offender_surcharge.lookup(public_card_id),
+    "Amount below required bond for this sender"
+  );
+
+  // Expiry: now + (caller ttl, or the card default when caller passes 0).
+  const public_ttl = disclose(ttl_epochs);
+  const effective_ttl = public_ttl == 0
+    ? card_default_bond_ttl_epochs.lookup(public_card_id)
+    : public_ttl;
+  const expiry = (epoch.read() + effective_ttl) as Uint<64>;
+
+  bonds.insert(public_bond_id);
+  bond_card.insert(public_bond_id, public_card_id);
+  bond_sender.insert(public_bond_id, sender);
+  bond_amount.insert(public_bond_id, public_amount);
+  bond_expiry_epoch.insert(public_bond_id, expiry);
+  bond_refunded.insert(public_bond_id, false);
+  bond_slashed.insert(public_bond_id, false);
+
+  // Reputation: count this bond for the sender.
+  const prior_total = sender_total_bonds.member(sender)
+    ? sender_total_bonds.lookup(sender)
+    : 0;
+  sender_total_bonds.insert(sender, (prior_total + 1) as Uint<64>);
+}
+
+// Refund a live bond.
+//   After expiry: ANYONE may trigger (keeper-friendly, sender gets funds back).
+//   Before expiry: only the card admin (e.g. "they replied, release early"),
+//   PROVEN by key — the old caller-supplied boolean is gone (v2 fix).
+export circuit refund_bond(bond_id: Bytes<32>): [] {
+  const public_bond_id = disclose(bond_id);
+  check_bond_live(public_bond_id);
+
+  const is_expired = epoch.read() >= bond_expiry_epoch.lookup(public_bond_id);
+  const caller_is_admin = disclose(
+    escrow_card_admin.member(bond_card.lookup(public_bond_id))
+      && caller_public_key()
+         == escrow_card_admin.lookup(bond_card.lookup(public_bond_id))
+  );
+  assert(is_expired || caller_is_admin, "Not expired and caller is not card admin");
+
+  bond_refunded.insert(public_bond_id, true);
+}
+
+// Slash a live bond on verified abuse (card admin only, proven by key).
+// Effects: bond marked slashed; the FULL amount credited to the card's
+// safety pool (v2: no division, 100% to victims); sender reputation updated.
+export circuit slash_bond(bond_id: Bytes<32>): [] {
+  const public_bond_id = disclose(bond_id);
+  check_bond_live(public_bond_id);
+  const card_id = bond_card.lookup(public_bond_id);
+  check_caller_is_card_admin(card_id);
+
+  bond_slashed.insert(public_bond_id, true);
+
+  // Victim compensation: whole amount to the card's safety pool.
+  const amount = bond_amount.lookup(public_bond_id);
+  const prior_pool = safety_pool_balance.member(card_id)
+    ? safety_pool_balance.lookup(card_id)
+    : 0;
+  safety_pool_balance.insert(card_id, (prior_pool + amount) as Uint<64>);
+
+  // Reputation: this sender now costs more to bond next time (see post_bond).
+  const sender = bond_sender.lookup(public_bond_id);
+  sender_slashed_count.insert(
+    sender,
+    (sender_prior_slashes(sender) + 1) as Uint<64>
+  );
+  const prior_slashed_total = sender_total_slashed.member(sender)
+    ? sender_total_slashed.lookup(sender)
+    : 0;
+  sender_total_slashed.insert(sender, (prior_slashed_total + amount) as Uint<64>);
+}
+
+// ---------------------------------------------------------------------------
+// CLOCK
+// ---------------------------------------------------------------------------
+export circuit advance_epoch(): [] {
+  epoch.increment(1);
+}

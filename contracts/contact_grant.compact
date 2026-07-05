@@ -1,0 +1,287 @@
+pragma language_version >= 0.16 && <= 0.23;
+
+import CompactStandardLibrary;
+
+// ===== contact_grant: SelectConnect on the DIDz grant engine =====
+//
+// WHAT THIS CONTRACT IS
+//   SelectConnect's contact link, rebuilt as a SCOPED GRANT (the DIDz engine
+//   pattern from midnight-modules/scoped-grant v2). The insight from the
+//   July 2026 architecture pass: a contact link IS a grant —
+//     scope         = "you may see my contact info up to level N"
+//     counterparty  = locked to ONE recipient (the person you gave it to)
+//     expiry        = the link dies on its own (e.g. 24h after a conference)
+//     revocation    = "revoke this creep's access" in one call
+//   What stays SelectConnect-specific (the product moat): abuse bonds and
+//   slashing (see abuse_escrow.compact), the relay service, and the
+//   progressive-reveal UX.
+//
+// PROGRESSIVE REVEAL, PLAIN ENGLISH
+//   A card owner uploads their contact info as ENCRYPTED LEVELS off-chain:
+//     level 1 = name, level 2 = LinkedIn, level 3 = email, level 4 = phone.
+//   Each level's ciphertext is committed on-chain (hash only). A recipient's
+//   grant carries max_reveal_level — how deep THIS person may ever see — and
+//   current_reveal_level — how far they have actually unlocked so far.
+//
+// PRIVACY MODEL
+//   Card admins and recipients are key commitments (H("midnight:mm:pk:", sk)),
+//   never identities. The chain shows that SOME card issued SOME grant and how
+//   deep it reveals; who the people are stays off-chain. Recipients prove they
+//   hold a grant in zero knowledge (same pattern as scoped-grant v2).
+//
+// WHO CALLS WHAT (call map for debugging)
+//   create_card           <- the card owner's wallet
+//   add_reveal_level      <- the card owner (appends one encrypted level)
+//   issue_contact_grant   <- the card owner (hands a link to ONE recipient)
+//   assert_reveal_allowed <- relay/verifier, READ-ONLY: "may this caller see
+//                            level L right now?" (no state change)
+//   unlock_next_level     <- the recipient (advances current_reveal_level)
+//   revoke_contact_grant  <- the card owner ("revoke the creep")
+//   deactivate_card       <- the card owner (kills the card + all its grants)
+//   advance_epoch         <- keeper/cron (shared clock)
+//   derive_public_key     <- SDKs, pure helper
+//
+// BOND INTEGRATION (breadcrumb)
+//   card_bond_required / card_min_bond_amount are POLICY FLAGS read by the
+//   relay + abuse_escrow.compact: when true, the relay refuses to deliver
+//   messages for this card unless the sender posted a bond in abuse_escrow.
+//   (Compact contracts cannot call each other in v1 — the relay is the glue.)
+
+// ---------------------------------------------------------------------------
+// PUBLIC STATE — cards
+// ---------------------------------------------------------------------------
+
+// Every card id that exists.
+export ledger cards: Set<Bytes<32>>;
+
+// Cards that are currently ACTIVE. Deactivating removes from here (the id
+// stays in `cards` so history survives). All grant checks require membership.
+export ledger active_cards: Set<Bytes<32>>;
+
+// card id -> key commitment of the card's owner/admin.
+export ledger card_admin: Map<Bytes<32>, Bytes<32>>;
+
+// card id -> commitment to the base contact ciphertext (level 0, off-chain).
+export ledger card_contact_commitment: Map<Bytes<32>, Bytes<32>>;
+
+// card id -> how many reveal levels have been added so far.
+export ledger card_level_count: Map<Bytes<32>, Uint<8>>;
+
+// H(card id, level number) -> commitment of that level's ciphertext.
+// Composite key keeps this a flat map a novice can inspect level by level.
+export ledger card_level_commitment: Map<Bytes<32>, Bytes<32>>;
+
+// card id -> does contacting this card require an abuse bond? (policy flag)
+export ledger card_bond_required: Map<Bytes<32>, Boolean>;
+
+// card id -> minimum bond amount if required (in the escrow's token units).
+export ledger card_min_bond_amount: Map<Bytes<32>, Uint<64>>;
+
+// ---------------------------------------------------------------------------
+// PUBLIC STATE — contact grants (the links)
+// ---------------------------------------------------------------------------
+
+// Live (unrevoked) contact grant ids. Removal IS revocation.
+export ledger active_contact_grants: Set<Bytes<32>>;
+
+// grant id -> the card it belongs to.
+export ledger grant_card: Map<Bytes<32>, Bytes<32>>;
+
+// grant id -> key commitment of the ONE recipient this link is locked to.
+// This is the counterparty lock from scoped-grant v2, always on here:
+// SelectConnect links are never bearer tokens.
+export ledger grant_recipient: Map<Bytes<32>, Bytes<32>>;
+
+// grant id -> the deepest level this recipient may EVER unlock.
+export ledger grant_max_reveal_level: Map<Bytes<32>, Uint<8>>;
+
+// grant id -> how deep this recipient has unlocked SO FAR (starts at 0).
+export ledger grant_current_reveal_level: Map<Bytes<32>, Uint<8>>;
+
+// grant id -> expiry epoch (the link dies on its own after this).
+export ledger grant_expiry: Map<Bytes<32>, Uint<64>>;
+
+// Keeper-driven clock, same pattern as scoped-grant / pol-credential.
+export ledger epoch: Counter;
+
+// ---------------------------------------------------------------------------
+// PRIVATE INPUTS
+// ---------------------------------------------------------------------------
+
+// The caller's secret key (card owner OR recipient depending on the circuit).
+witness local_secret_key(): Bytes<32>;
+
+// ---------------------------------------------------------------------------
+// HELPERS
+// ---------------------------------------------------------------------------
+
+// Same derivation as every midnight-modules contract (shared domain tag).
+export circuit derive_public_key(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([
+    pad(32, "midnight:mm:pk:"),
+    sk
+  ]);
+}
+
+circuit caller_public_key(): Bytes<32> {
+  return derive_public_key(local_secret_key());
+}
+
+// Composite key for the per-level commitment map: H(domain, card, H(level)).
+// The level number is hashed to Bytes<32> first so all three parts line up.
+circuit level_key(card_id: Bytes<32>, level: Uint<8>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "selectconnect:level:v2"),
+    card_id,
+    persistentHash<Uint<8>>(level)
+  ]);
+}
+
+// Shared guard: card exists + active + caller is its admin.
+circuit check_caller_admins_active_card(card_id: Bytes<32>): [] {
+  assert(cards.member(card_id), "Card does not exist");
+  assert(active_cards.member(card_id), "Card is deactivated");
+  assert(
+    disclose(caller_public_key() == card_admin.lookup(card_id)),
+    "Caller is not this card's admin"
+  );
+}
+
+// Shared rulebook for reveal checks (read-only + unlock both use this):
+//   1. grant is live (not revoked)     4. requested level within grant max
+//   2. its card is still active        5. grant not expired
+//   3. caller IS the locked recipient
+circuit check_reveal_allowed(grant_id: Bytes<32>, requested_level: Uint<8>): [] {
+  assert(active_contact_grants.member(grant_id), "Contact grant revoked or unknown");
+  assert(
+    active_cards.member(grant_card.lookup(grant_id)),
+    "Card is deactivated"
+  );
+  assert(
+    disclose(caller_public_key() == grant_recipient.lookup(grant_id)),
+    "Caller is not this link's recipient"
+  );
+  assert(
+    requested_level <= grant_max_reveal_level.lookup(grant_id),
+    "Level exceeds what this link may ever reveal"
+  );
+  assert(epoch.read() < grant_expiry.lookup(grant_id), "Contact grant expired");
+}
+
+// ---------------------------------------------------------------------------
+// CARDS
+// ---------------------------------------------------------------------------
+
+// Create a card. The card id is caller-supplied (e.g. H(alias, salt)) and the
+// caller becomes its admin. Only commitments go on-chain, never contact data.
+export circuit create_card(
+  card_id: Bytes<32>,
+  contact_commitment: Bytes<32>,
+  bond_required: Boolean,
+  min_bond_amount: Uint<64>
+): [] {
+  const public_card_id = disclose(card_id);
+  assert(!cards.member(public_card_id), "Card id already exists");
+
+  cards.insert(public_card_id);
+  active_cards.insert(public_card_id);
+  card_admin.insert(public_card_id, disclose(caller_public_key()));
+  card_contact_commitment.insert(public_card_id, disclose(contact_commitment));
+  card_level_count.insert(public_card_id, 0);
+  card_bond_required.insert(public_card_id, disclose(bond_required));
+  card_min_bond_amount.insert(public_card_id, disclose(min_bond_amount));
+}
+
+// Append one encrypted reveal level (admin only). Levels are 1-based:
+// the first call stores level 1, the next level 2, and so on.
+export circuit add_reveal_level(
+  card_id: Bytes<32>,
+  level_ciphertext_commitment: Bytes<32>
+): [] {
+  const public_card_id = disclose(card_id);
+  check_caller_admins_active_card(public_card_id);
+
+  const next_level = (card_level_count.lookup(public_card_id) + 1) as Uint<8>;
+  card_level_commitment.insert(
+    level_key(public_card_id, next_level),
+    disclose(level_ciphertext_commitment)
+  );
+  card_level_count.insert(public_card_id, next_level);
+}
+
+// ---------------------------------------------------------------------------
+// CONTACT GRANTS (the links)
+// ---------------------------------------------------------------------------
+
+// The card owner hands a link to ONE recipient (by key commitment), capped at
+// max_reveal_level and expiring at expiry_epoch. This is issue_grant from the
+// engine, specialized: scope is implicitly "contact:reveal", counterparty lock
+// is mandatory.
+export circuit issue_contact_grant(
+  grant_id: Bytes<32>,
+  card_id: Bytes<32>,
+  recipient_public_key: Bytes<32>,
+  max_reveal_level: Uint<8>,
+  expiry_epoch: Uint<64>
+): [] {
+  const public_card_id = disclose(card_id);
+  check_caller_admins_active_card(public_card_id);
+
+  const public_grant_id = disclose(grant_id);
+  assert(!active_contact_grants.member(public_grant_id), "Grant id already in use");
+  const public_recipient = disclose(recipient_public_key);
+  assert(public_recipient != pad(32, ""), "Recipient key cannot be zero");
+  const public_max_level = disclose(max_reveal_level);
+  assert(
+    public_max_level <= card_level_count.lookup(public_card_id),
+    "max_reveal_level exceeds the card's level count"
+  );
+
+  active_contact_grants.insert(public_grant_id);
+  grant_card.insert(public_grant_id, public_card_id);
+  grant_recipient.insert(public_grant_id, public_recipient);
+  grant_max_reveal_level.insert(public_grant_id, public_max_level);
+  grant_current_reveal_level.insert(public_grant_id, 0);
+  grant_expiry.insert(public_grant_id, disclose(expiry_epoch));
+}
+
+// READ-ONLY: "may this caller see level L right now?" The relay calls this
+// before serving a level's ciphertext. One bit out; nothing changes on-chain.
+export circuit assert_reveal_allowed(grant_id: Bytes<32>, level: Uint<8>): [] {
+  check_reveal_allowed(disclose(grant_id), disclose(level));
+}
+
+// The recipient unlocks the NEXT level (strictly one at a time, so a card
+// owner watching their card sees a natural progression, never a jump).
+export circuit unlock_next_level(grant_id: Bytes<32>): [] {
+  const public_grant_id = disclose(grant_id);
+  const next_level =
+    (grant_current_reveal_level.lookup(public_grant_id) + 1) as Uint<8>;
+  check_reveal_allowed(public_grant_id, next_level);
+  grant_current_reveal_level.insert(public_grant_id, next_level);
+}
+
+// "Revoke the creep": the card owner kills one link instantly.
+export circuit revoke_contact_grant(grant_id: Bytes<32>): [] {
+  const public_grant_id = disclose(grant_id);
+  assert(active_contact_grants.member(public_grant_id), "Grant not active");
+  // Admin check goes through the grant's card (only the card owner revokes).
+  check_caller_admins_active_card(grant_card.lookup(public_grant_id));
+  active_contact_grants.remove(public_grant_id);
+}
+
+// Deactivate a whole card. Every grant on it dies at once, because
+// check_reveal_allowed requires the card to be in active_cards (cascade —
+// same trick as scoped-grant's root revocation).
+export circuit deactivate_card(card_id: Bytes<32>): [] {
+  const public_card_id = disclose(card_id);
+  check_caller_admins_active_card(public_card_id);
+  active_cards.remove(public_card_id);
+}
+
+// ---------------------------------------------------------------------------
+// CLOCK
+// ---------------------------------------------------------------------------
+export circuit advance_epoch(): [] {
+  epoch.increment(1);
+}
