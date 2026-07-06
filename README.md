@@ -440,3 +440,14 @@ SelectConnect is a **consumer product** built on the DIDz three-pillar model:
 - **RWAz (object identity):** Not directly used.
 
 SelectConnect uses `abuse_escrow.compact` (6 circuits) and `contact_grant.compact` (8 circuits).
+
+---
+
+## DIDz Ecosystem
+
+This project is part of the DIDz ecosystem — a suite of privacy-preserving
+identity, credential, and application tools built on Midnight Network.
+
+![DIDz Ecosystem Map](docs/DIDz-ecosystem-map.png)
+
+See the full ecosystem map above, or visit [didz.io](https://didz.io) for details.
