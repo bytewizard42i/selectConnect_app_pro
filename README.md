@@ -430,3 +430,13 @@ Apache License 2.0 - Open source for maximum impact and community contribution.
 *"Where privacy meets accountability, safety meets innovation, and networking meets its future."*
 
 **SelectConnect: Redefining digital trust, one connection at a time.** 🃏🔒⚖️
+
+## Three-pillar connection
+
+SelectConnect is a **consumer product** built on the DIDz three-pillar model:
+
+- **DIDz (root identity):** Each user has a DIDz. SelectConnect issues contact grants tied to that DIDz.
+- **AgenticDID (agent authority):** Contact grants use the scoped-grant engine from midnight-modules — bounded, revocable, attenuating.
+- **RWAz (object identity):** Not directly used.
+
+SelectConnect uses `abuse_escrow.compact` (6 circuits) and `contact_grant.compact` (8 circuits).
