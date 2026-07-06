@@ -1,7 +1,7 @@
 # SelectConnect Contracts (v2, on the DIDz engine)
 
-> Rebuilt July 5, 2026 against the new four-pillar architecture
-> (DIDz root / AgenticDID / RWAz / SelectConnect-as-product).
+> Rebuilt July 5, 2026 against the new three-pillar architecture
+> (DIDz root / AgenticDID / RWAz as pillars, SelectConnect as first product).
 > See `docs/DIDz_ENGINE_INTEGRATION.md` for the full decision record.
 
 ## Live contracts (compiled on compactc 0.31.1, full ZK keys)
