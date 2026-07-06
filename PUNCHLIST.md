@@ -4,12 +4,12 @@
 > Status: gaps found during demo spin-up + gap analysis
 
 ## Demo UI
-- [ ] Modernize demo UI to 2026 design (glassmorphism, 3D tilt, haptics, tooltips) — still has old pre-modernization style
+- [x] Modernize demo UI to 2026 design — glassmorphism, 3D tilt, haptics, tooltips, aurora, progressive reveal steps
 - [ ] Demo server runs on port 3000 (consider standardizing to demoLand port convention)
 
 ## Contracts
 - [x] Verify v2 contracts compile on `compactc 0.31.1` — both compile clean (8 + 6 circuits)
-- [ ] Remove or clearly label old 2025 archived contracts as stale-syntax reference hazards
+- [x] Remove or clearly label old 2025 archived contracts — README.md added to contracts/archive/
 - [ ] Write/verify contract tests
 
 ## House convention docs
