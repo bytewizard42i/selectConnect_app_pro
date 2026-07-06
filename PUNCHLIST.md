@@ -8,14 +8,14 @@
 - [ ] Demo server runs on port 3000 (consider standardizing to demoLand port convention)
 
 ## Contracts
-- [ ] Verify v2 contracts compile on `compactc 0.31.1` (contact_grant.compact + abuse_escrow.compact v2)
+- [x] Verify v2 contracts compile on `compactc 0.31.1` — both compile clean (8 + 6 circuits)
 - [ ] Remove or clearly label old 2025 archived contracts as stale-syntax reference hazards
 - [ ] Write/verify contract tests
 
-## House convention docs (missing)
-- [ ] `docs/DEMOLAND_VS_REALDEAL.md`
-- [ ] `docs/DIF_RELEVANCE.md`
+## House convention docs
+- [x] `docs/DEMOLAND_VS_REALDEAL.md` — created
+- [x] `docs/DIF_RELEVANCE.md` — already existed
 
 ## Cross-cutting
-- [ ] Add pointer doc to midnight-modules engine (cross-pollination)
+- [x] Add pointer doc to midnight-modules engine — `docs/ENGINE_REFERENCE.md` created
 - [ ] Confirm `docs/DIDZ_ENGINE_INTEGRATION.md` is up to date with current engine state
