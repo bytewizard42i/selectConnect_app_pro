@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const path = require('path');
 
 const app = express();
-const PORT = 3000;
+const PORT = 3015; // demoLand port convention (30xx range)
 
 // Middleware
 app.use(express.json());

@@ -5,7 +5,7 @@
 
 ## Demo UI
 - [x] Modernize demo UI to 2026 design — glassmorphism, 3D tilt, haptics, tooltips, aurora, progressive reveal steps
-- [ ] Demo server runs on port 3000 (consider standardizing to demoLand port convention)
+- [x] Demo server runs on port 3015 (standardized to demoLand 30xx convention; was 3000)
 
 ## Contracts
 - [x] Verify v2 contracts compile on `compactc 0.31.1` — both compile clean (8 + 6 circuits)
