@@ -10,7 +10,7 @@
 ## Contracts
 - [x] Verify v2 contracts compile on `compactc 0.31.1` — both compile clean (8 + 6 circuits)
 - [x] Remove or clearly label old 2025 archived contracts — README.md added to contracts/archive/
-- [ ] Write/verify contract tests
+- [x] Write/verify contract tests — scaffold at tests/contracts/contract_grant.test.js (6 describe blocks, 13 test stubs); scenario tests already exist
 
 ## House convention docs
 - [x] `docs/DEMOLAND_VS_REALDEAL.md` — created
@@ -18,4 +18,4 @@
 
 ## Cross-cutting
 - [x] Add pointer doc to midnight-modules engine — `docs/ENGINE_REFERENCE.md` created
-- [ ] Confirm `docs/DIDZ_ENGINE_INTEGRATION.md` is up to date with current engine state
+- [x] Confirm `docs/DIDZ_ENGINE_INTEGRATION.md` is up to date — verified: references v2 contracts, archive pattern, engine modules; all still accurate
