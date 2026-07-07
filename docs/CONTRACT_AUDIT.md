@@ -21,7 +21,7 @@ The contract has solid architecture and logic, but contains **multiple syntax is
 
 ---
 
-## Issue 1: Map/Set API — Freestanding vs Method Syntax (HIGH)
+## Issue 1: Map/Set API, Freestanding vs Method Syntax (HIGH)
 
 The contract uses **freestanding function syntax** throughout. The current Compact syntax reference documents **method syntax** on ADT types.
 
@@ -147,8 +147,8 @@ Move the modulo computation to a witness function (off-chain), then verify the r
 Line 474 uses `treeInsert(reveal_tree, levelCommit)` and line 539 uses `treeContains(reveal_tree, levelCommit)`.
 
 Per the syntax reference:
-- `tree.insert(leaf)` — **works** in circuits ✅
-- `tree.root()` — **NOT available** in circuits ❌
+- `tree.insert(leaf)`, **works** in circuits ✅
+- `tree.root()`, **NOT available** in circuits ❌
 
 The `treeContains()` function is not documented at all. MerkleTree membership proofs typically require:
 1. A witness to provide the Merkle proof path
@@ -202,8 +202,8 @@ Per the reference, enum can cast to `Field` (variant index). To get to `Bytes<32
 Several lines perform arithmetic without casting the result back to the expected type:
 
 ```compact
-return (minBond * multiplier) / 100u64;  // Line 283 — division not documented
-currentLevel + 1u8                       // Line 479 — result type may be bounded
+return (minBond * multiplier) / 100u64;  // Line 283, division not documented
+currentLevel + 1u8                       // Line 479, result type may be bounded
 ```
 
 Arithmetic results in Compact produce bounded types that may need explicit casting:
@@ -220,7 +220,7 @@ Note: Division `/` is also not documented in the arithmetic operators.
 
 Rather than fixing all ~80 occurrences in the 987-line contract, I recommend:
 
-1. **Create a clean MVP contract** (`SelectConnectMVP.compact`) with 8 essential circuits using correct syntax — this is the standalone product's starting point
+1. **Create a clean MVP contract** (`SelectConnectMVP.compact`) with 8 essential circuits using correct syntax, this is the standalone product's starting point
 2. **Keep the full contract as-is** for reference and future expansion
 3. **Compile the MVP** to verify it works
 4. **Incrementally port** circuits from full → MVP as needed

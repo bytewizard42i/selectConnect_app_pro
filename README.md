@@ -413,7 +413,7 @@ circuit getInteractionRecord(interactionId) -> InteractionRecord
 
 ---
 
-**Judges, SelectConnect isn't just another networking app—it's a fundamental shift toward accountable, privacy-preserving digital interactions. We're not just building technology; we're building a safer digital world.**
+**Judges, SelectConnect isn't just another networking app,it's a fundamental shift toward accountable, privacy-preserving digital interactions. We're not just building technology; we're building a safer digital world.**
 
 *Ready to revolutionize networking? The future is SelectConnect.* 🃏✨
 
@@ -436,7 +436,7 @@ Apache License 2.0 - Open source for maximum impact and community contribution.
 SelectConnect is a **consumer product** built on the DIDz three-pillar model:
 
 - **DIDz (root identity):** Each user has a DIDz. SelectConnect issues contact grants tied to that DIDz.
-- **AgenticDID (agent authority):** Contact grants use the scoped-grant engine from midnight-modules — bounded, revocable, attenuating.
+- **AgenticDID (agent authority):** Contact grants use the scoped-grant engine from midnight-modules, bounded, revocable, attenuating.
 - **RWAz (object identity):** Not directly used.
 
 SelectConnect uses `abuse_escrow.compact` (6 circuits) and `contact_grant.compact` (8 circuits).
@@ -445,7 +445,7 @@ SelectConnect uses `abuse_escrow.compact` (6 circuits) and `contact_grant.compac
 
 ## DIDz Ecosystem
 
-This project is part of the DIDz ecosystem — a suite of privacy-preserving
+This project is part of the DIDz ecosystem, a suite of privacy-preserving
 identity, credential, and application tools built on Midnight Network.
 
 ![DIDz Ecosystem Map](docs/DIDz-ecosystem-map.png)

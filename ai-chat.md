@@ -16,7 +16,7 @@ This file contains the complete conversation history for the NoirCard project de
 *[Cascade explored the existing folder structure and found a NoirCard image and reference file, then created a memory for the new workspace]*
 
 ### Alice's Abuse Bond System Introduction
-**John**: 100%! We can **pin abuse to the exact pseudonymous sender**—without doxxing them—using scoped commitments/nullifiers:
+**John**: 100%! We can **pin abuse to the exact pseudonymous sender**,without doxxing them,using scoped commitments/nullifiers:
 
 ## How we "know who did it" (privately)
 
@@ -37,7 +37,7 @@ This file contains the complete conversation history for the NoirCard project de
 *[Cascade successfully cloned the repository and began implementing the abuse detection system]*
 
 ### Core NoirCard System Specification
-**John**: I'm glad you like it, John — the **abuse bond** is one of the most elegant pieces of the NoirCard protocol because it flips the power dynamic and makes **unwanted contact economically costly**. Here's the deep dive:
+**John**: I'm glad you like it, John, the **abuse bond** is one of the most elegant pieces of the NoirCard protocol because it flips the power dynamic and makes **unwanted contact economically costly**. Here's the deep dive:
 
 ## 🎯 What it is
 

@@ -1,4 +1,4 @@
-# SelectConnect — Vision & Strategy
+# SelectConnect, Vision & Strategy
 
 > **One primitive. Infinite applications.**
 > *"Person A wants to contact Person B. B sets the rules. A puts skin in the game."*
@@ -38,7 +38,7 @@ The person *initiating* contact pays nothing. Zero skin in the game.
 
 SelectConnect flips this with one simple rule: **the initiator stakes value before contact is made.** If the interaction is genuine, they get it back. If it's abuse, they lose it.
 
-That's not a feature. That's a **protocol primitive** — as fundamental as HTTP is to the web. Every platform that involves strangers contacting each other needs this.
+That's not a feature. That's a **protocol primitive**, as fundamental as HTTP is to the web. Every platform that involves strangers contacting each other needs this.
 
 ---
 
@@ -50,7 +50,7 @@ Strip away the DIDz ecosystem, the hackathon polish, the 22 ZK circuits. At its 
 
 | Primitive | What It Does | Why It Matters |
 |-----------|-------------|----------------|
-| **Bonded Contact** | Initiator stakes value to request contact | Eliminates spam economically — not with filters, not with AI, but with money |
+| **Bonded Contact** | Initiator stakes value to request contact | Eliminates spam economically, not with filters, not with AI, but with money |
 | **Progressive Reveal** | Recipient controls what info is shared and when | Replaces the binary "share everything or nothing" with granular control |
 | **Pseudonymous Reputation** | Track behavior patterns without revealing identity | Bad actors get caught without anyone getting doxxed |
 
@@ -65,7 +65,7 @@ All three = SelectConnect Protocol
 
 ### Why Zero-Knowledge Proofs Matter Here
 
-ZK isn't a buzzword for SelectConnect — it's structurally necessary:
+ZK isn't a buzzword for SelectConnect, it's structurally necessary:
 
 - **Bonds** need to be verifiable without revealing who posted them
 - **Reputation** needs to track patterns without linking to real identity
@@ -136,11 +136,11 @@ The current `SelectConnectProtocol.compact` has 22 circuits. The MVP needs **8**
 | ✅ | `revokeLink` | Cut off access |
 
 **Cut for MVP** (add back in v2):
-- Privacy routing (5-digit codes) — nice to have, not essential
-- Credential management — requires DIDz integration
-- Card suspension/reactivation — just use revoke for now
-- Pseudonym updates — edge case
-- Spam reporting via routes — MVP uses direct slashing
+- Privacy routing (5-digit codes), nice to have, not essential
+- Credential management, requires DIDz integration
+- Card suspension/reactivation, just use revoke for now
+- Pseudonym updates, edge case
+- Spam reporting via routes, MVP uses direct slashing
 
 ### MVP Contract: ~300 Lines
 
@@ -157,7 +157,7 @@ A lean version of the contract focusing only on the 8 essential circuits, with s
 - **Concentrated users**: 500–5,000 people in one place for 3 days
 - **Built-in virality**: "Scan my SelectConnect" replaces "here's my card"
 - **Easy partnership**: Conference organizers are desperate for safety solutions
-- **Time-boxed**: Cards expire after the event — low commitment for first-time users
+- **Time-boxed**: Cards expire after the event, low commitment for first-time users
 
 **Go-to-market:**
 1. Partner with 3–5 tech conferences (DevCon, Consensus, Midnight Vegas)
@@ -193,7 +193,7 @@ More users → More reputation data → Better spam detection → Safer platform
      └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Cross-platform reputation** is the killer feature. A harasser slashed at a conference carries that reputation hit to dating, to DMs, to professional outreach. They can't just create a new account — their pseudonymous fingerprint follows them within contexts.
+**Cross-platform reputation** is the killer feature. A harasser slashed at a conference carries that reputation hit to dating, to DMs, to professional outreach. They can't just create a new account, their pseudonymous fingerprint follows them within contexts.
 
 ---
 
@@ -226,7 +226,7 @@ This is the big one. Social media platforms pay to embed SelectConnect:
 
 | Integration | Model | Revenue Potential |
 |-------------|-------|------------------|
-| **SDK embed** | Per-transaction fee (1–2%) | Massive at scale — millions of DMs |
+| **SDK embed** | Per-transaction fee (1–2%) | Massive at scale, millions of DMs |
 | **White-label** | Annual license ($10K–$100K/yr) | Conference platforms, dating apps |
 | **API access** | Usage-based ($0.01–$0.05 per call) | Any platform integrating bond logic |
 
@@ -238,7 +238,7 @@ Slashed bonds accumulate in the safety pool. This creates a treasury that can:
 - Earn yield in DeFi (Midnight ecosystem staking)
 - Fund platform development and safety research
 
-**This is not just revenue — it's a social impact narrative that attracts grants, press, and ESG investors.**
+**This is not just revenue, it's a social impact narrative that attracts grants, press, and ESG investors.**
 
 ### Financial Projections (Conservative)
 
@@ -314,7 +314,7 @@ const qr = card.getQRCode({ size: 256 });
 // Check if someone has a bad reputation before allowing contact
 const rep = await sc.checkReputation(senderPseudonym);
 if (rep.slashRate > 0.1) {
-  // This sender has been slashed >10% of the time — require higher bond
+  // This sender has been slashed >10% of the time, require higher bond
   card.setBondMultiplier(3);
 }
 ```
@@ -370,7 +370,7 @@ A browser extension that adds SelectConnect to ANY website:
 - **Instagram DMs**: Creators set bond requirements for fan messages.
 - **Email**: Chrome extension that adds bond verification to Gmail.
 
-This is the "Trojan horse" strategy — users install the extension, it works everywhere, platforms eventually integrate natively because their users are already using it.
+This is the "Trojan horse" strategy, users install the extension, it works everywhere, platforms eventually integrate natively because their users are already using it.
 
 #### Widget / Embed (Zero Code)
 
@@ -388,7 +388,7 @@ For non-developers:
 ></div>
 ```
 
-A Squarespace user, a WordPress blogger, a Shopify merchant — anyone can add bonded contact to their site with zero code.
+A Squarespace user, a WordPress blogger, a Shopify merchant, anyone can add bonded contact to their site with zero code.
 
 ### Platform Integration Playbook
 
@@ -419,12 +419,12 @@ A Squarespace user, a WordPress blogger, a Shopify merchant — anyone can add b
 
 ### SelectConnect's Moat
 
-1. **Economic deterrence** — not a filter that can be bypassed, but a cost that can't be faked
-2. **Refund for good actors** — unlike pay-to-DM, genuine people get their money back
-3. **Pseudonymous reputation** — cross-platform tracking without doxxing (only possible with ZK)
-4. **Safety pool** — slashed bonds fund safety, creating a virtuous cycle
-5. **Progressive reveal** — cryptographic guarantees, not pinky promises
-6. **Open protocol** — platforms integrate SelectConnect; they don't compete with it
+1. **Economic deterrence**, not a filter that can be bypassed, but a cost that can't be faked
+2. **Refund for good actors**, unlike pay-to-DM, genuine people get their money back
+3. **Pseudonymous reputation**, cross-platform tracking without doxxing (only possible with ZK)
+4. **Safety pool**, slashed bonds fund safety, creating a virtuous cycle
+5. **Progressive reveal**, cryptographic guarantees, not pinky promises
+6. **Open protocol**, platforms integrate SelectConnect; they don't compete with it
 
 ### Why X's "Pay to DM" Proves the Market
 
@@ -488,11 +488,11 @@ SelectConnect is what pay-to-DM *should have been*. The fact that X tried this v
 
 ### The Timing Is Perfect
 
-1. **Post-Tinder safety anxiety** — dating apps under regulatory pressure for user safety
-2. **Creator economy explosion** — 50M+ creators drowning in DMs, willing to pay for filtering
-3. **X's pay-to-DM precedent** — the market has been educated that economic barriers work
-4. **ZK maturity** — Midnight makes privacy-preserving economic protocols actually buildable
-5. **Regulatory tailwind** — EU Digital Services Act, UK Online Safety Bill — platforms MUST address harassment
+1. **Post-Tinder safety anxiety**, dating apps under regulatory pressure for user safety
+2. **Creator economy explosion**, 50M+ creators drowning in DMs, willing to pay for filtering
+3. **X's pay-to-DM precedent**, the market has been educated that economic barriers work
+4. **ZK maturity**, Midnight makes privacy-preserving economic protocols actually buildable
+5. **Regulatory tailwind**, EU Digital Services Act, UK Online Safety Bill, platforms MUST address harassment
 
 ### The Numbers That Matter
 
@@ -506,7 +506,7 @@ SelectConnect is what pay-to-DM *should have been*. The fact that X tried this v
 
 ### The Unfair Advantage
 
-John — you're building this on Midnight. That's not incidental. The ZK infrastructure required for pseudonymous reputation tracking, private bond management, and cryptographic progressive reveal **does not exist on any other chain in a developer-friendly form.**
+John, you're building this on Midnight. That's not incidental. The ZK infrastructure required for pseudonymous reputation tracking, private bond management, and cryptographic progressive reveal **does not exist on any other chain in a developer-friendly form.**
 
 Ethereum has ZK rollups for scaling. Midnight has ZK proofs for **privacy as a first-class feature**. That's a different thing entirely.
 
@@ -521,7 +521,7 @@ When SelectConnect operates standalone, it's a great product. When it plugs into
 | Ecosystem Product | What It Adds to SelectConnect |
 |------------------|------------------------------|
 | **DIDz.io** | Verified credential badges on cards ("KYC verified ✓", "Licensed attorney ✓") |
-| **KYCz** | Biometric liveness — anti-catfish, anti-bot |
+| **KYCz** | Biometric liveness, anti-catfish, anti-bot |
 | **GeoZ** | Location proofs without revealing address ("Lives in Boise ✓") |
 | **SentinelDID** | Emergency override for safety situations |
 | **ProMingle** | Conference-native integration |
@@ -530,13 +530,13 @@ When SelectConnect operates standalone, it's a great product. When it plugs into
 | **SharedScience** | Anonymous researcher collaboration channels |
 | **AgenticDID** | AI agent bonded contact (stop AI spam) |
 
-These integrations are optional add-ons — SelectConnect works without them, but each one makes it more powerful. This is the **platform flywheel**: every new DIDz product increases SelectConnect's value, and SelectConnect increases every DIDz product's value.
+These integrations are optional add-ons, SelectConnect works without them, but each one makes it more powerful. This is the **platform flywheel**: every new DIDz product increases SelectConnect's value, and SelectConnect increases every DIDz product's value.
 
 ---
 
 *"Stripe didn't build e-commerce. Stripe made payments so easy that everyone else could build e-commerce. SelectConnect doesn't build social networks. SelectConnect makes safe contact so easy that every social network becomes safer."*
 
-— Penny 🎀 & John, March 2026
+, Penny 🎀 & John, March 2026
 
 ---
 
@@ -551,6 +551,6 @@ These integrations are optional add-ons — SelectConnect works without them, bu
 | Module/SDK architecture | ✅ Complete |
 | Competitive analysis | ✅ Complete |
 | Build roadmap | ✅ Complete |
-| Financial projections | ✅ Complete — conservative |
+| Financial projections | ✅ Complete, conservative |
 
 **Next steps**: Audit the existing Compact contract, trim to MVP 8 circuits, scaffold the standalone project.

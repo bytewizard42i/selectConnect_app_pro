@@ -38,7 +38,7 @@ reimplement link issuance/expiry/revocation by hand (and use older syntax, e.g.
 
 1. **Keep**: `AbuseEscrow` economics, progressive-reveal UX, relay service,
    the product surface. This is the moat and the monetization.
-2. **Replace**: hand-rolled link lifecycle with `scoped-grant` v2 —
+2. **Replace**: hand-rolled link lifecycle with `scoped-grant` v2 ,
    per-accessor links become counterparty-locked grants; card policy knobs
    (bond required, reveal delay) ride the custom-constraints extension slot.
 3. **Adopt later, incrementally**: full DIDz identity anchoring (cards bound to
@@ -54,7 +54,7 @@ reimplement link issuance/expiry/revocation by hand (and use older syntax, e.g.
 - **Upgrade optionality**: because links are grants, every future DIDz
   capability (credentials, POL, agent delegation) plugs in without re-architecting.
 - **Ecosystem flywheel**: the same grant engine powers EventRevolution
-  (attendee access), ProMingle and SouLink (introduction/disclosure grants) —
+  (attendee access), ProMingle and SouLink (introduction/disclosure grants) ,
   SelectConnect is the beachhead product that proves it in market.
 
 ## Order of work

@@ -1,4 +1,4 @@
-# SelectConnect — demoLand vs realDeal
+# SelectConnect, demoLand vs realDeal
 
 > Convention: every DIDzMonolith product ships two modes.
 > Canonical spec: `~/PixyPi/docs/DEMOLAND_AUTH_STANDARD.md`
@@ -7,10 +7,10 @@
 
 - **Port**: 3000
 - **Server**: `demo/server.js` (Express + QRCode generation)
-- **Chain**: simulated — mock cards, bonds, and progressive reveal
+- **Chain**: simulated, mock cards, bonds, and progressive reveal
 - **Auth**: 7-method standard (see canonical doc)
-- **No Docker required** — just `npm install && npm start`
-- **Safe to record** — deterministic, no network calls
+- **No Docker required**, just `npm install && npm start`
+- **Safe to record**, deterministic, no network calls
 
 ## realDeal (planned)
 
@@ -22,7 +22,7 @@
 
 ## Rules
 
-1. Shared pipeline logic written ONCE — both sides are thin orchestrators
+1. Shared pipeline logic written ONCE, both sides are thin orchestrators
 2. The UI must never know which mode it's in (provider context switch)
 3. demoLand must show the amber `🎭 DEMO MODE` banner
 4. Auth must implement the 7-method standard

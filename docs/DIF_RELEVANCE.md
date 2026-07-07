@@ -18,7 +18,7 @@ selectConnect progressive disclosure model is the exact use case Presentation Ex
 
 ## Integration patterns from the canonical doc
 
-- Pattern B (Presentation Exchange for credential proofs) — direct fit
+- Pattern B (Presentation Exchange for credential proofs), direct fit
 - Pattern C (DIDComm v2 for messaging)
 - Pattern E (BBS+ for selective disclosure)
 

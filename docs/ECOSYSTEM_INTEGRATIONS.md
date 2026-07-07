@@ -1,9 +1,9 @@
-# SelectConnect — Ecosystem Integration Map
+# SelectConnect, Ecosystem Integration Map
 
 > *SelectConnect is the universal privacy-preserving connection layer for the DIDz ecosystem. Every product that involves one person contacting, connecting with, or revealing information to another can use SelectConnect's progressive reveal, abuse bonds, and privacy routing.*
 
 **Date**: March 24, 2026 (updated)  
-**See also**: [VISION.md](./VISION.md) — full protocol thesis, standalone MVP, market strategy, financialization
+**See also**: [VISION.md](./VISION.md), full protocol thesis, standalone MVP, market strategy, financialization
 
 ---
 
@@ -31,7 +31,7 @@
 
 | Feature | Circuit | Who Uses It |
 |---------|---------|------------|
-| **Progressive reveal** | `addRevealLevel()` + `accessNextLevel()` | All products — universal pattern for staged information sharing |
+| **Progressive reveal** | `addRevealLevel()` + `accessNextLevel()` | All products, universal pattern for staged information sharing |
 | **Abuse bonds** | `postBond()` + `slashBond()` + `refundBond()` | ProMingle (spam filtering), SouLink (harassment deterrence), CareToCoin (donor filtering), AgenticDID (AI agent filtering) |
 | **Privacy routing** | `generatePrivacyRoute()` + `accessViaPrivacyRoute()` | Conference networking (5-digit codes), event check-ins, anonymous inquiries, SharedScience channels |
 | **Pseudonymous tracking** | `sender_reputation` ledger | Cross-platform repeat offender detection without revealing identity |
@@ -47,7 +47,7 @@
 | Product | What It Adds | Circuit/Feature |
 |---------|-------------|----------------|
 | **DIDz.io** | Verified credential badges | `proveAgeAtLeast()`, `proveKycPassed()`, `proveComposite()` |
-| **KYCz** | Biometric liveness ("real human ✓") | 8-factor liveness score — anti-catfish, anti-bot |
+| **KYCz** | Biometric liveness ("real human ✓") | 8-factor liveness score, anti-catfish, anti-bot |
 | **GeoZ** | Location proofs ("Lives in [City] ✓") | Privacy-preserving geolocation without revealing address |
 | **SentinelDID** | Emergency workforce credentials | Verified first responder/EMT for emergency health data access |
 | **AgenticDID** | AI agent identity proofs | Prove agent is authorized, bonded, and operating within policy |
@@ -59,7 +59,7 @@
 
 ## The Pattern: SelectConnect as a Protocol Layer
 
-SelectConnect isn't just one app — it's a **protocol** that any product (DIDz or external) can embed:
+SelectConnect isn't just one app, it's a **protocol** that any product (DIDz or external) can embed:
 
 ```
 Any Product (DIDz or Third-Party)
@@ -90,11 +90,11 @@ Any Product (DIDz or Third-Party)
 
 SelectConnect is designed to operate standalone as a modular SDK. See [VISION.md](./VISION.md) for:
 
-- **`@selectconnect/sdk`** — npm package for any JavaScript app
-- **`@selectconnect/react`** — drop-in React components
-- **REST API** — for non-JS platforms
-- **Browser extension** — bond-gate DMs on Twitter/X, LinkedIn, Instagram
-- **Widget embed** — zero-code integration for any website
+- **`@selectconnect/sdk`**, npm package for any JavaScript app
+- **`@selectconnect/react`**, drop-in React components
+- **REST API**, for non-JS platforms
+- **Browser extension**, bond-gate DMs on Twitter/X, LinkedIn, Instagram
+- **Widget embed**, zero-code integration for any website
 
 ---
 

@@ -1,4 +1,4 @@
-# Archived Contracts — Stale Syntax Hazard
+# Archived Contracts, Stale Syntax Hazard
 
 > **WARNING**: These contracts use OLD Compact syntax from 2025.
 > They do NOT compile on `compactc 0.31.1` and are kept for historical reference only.
@@ -6,8 +6,8 @@
 ## Do NOT use these as code examples
 
 The active v2 contracts are in the parent directory:
-- `../contact_grant.compact` — engine-based, compiles on 0.31.1
-- `../abuse_escrow.compact` — engine-based, compiles on 0.31.1
+- `../contact_grant.compact`, engine-based, compiles on 0.31.1
+- `../abuse_escrow.compact`, engine-based, compiles on 0.31.1
 
 ## What's here
 

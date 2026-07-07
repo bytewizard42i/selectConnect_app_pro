@@ -1,4 +1,4 @@
-# SelectConnect MVP — Build Guide
+# SelectConnect MVP, Build Guide
 
 > Practical companion to [VISION.md](./VISION.md). This document maps the
 > compiler-validated `SelectConnectMVP.compact` contract to the frontend,
@@ -19,8 +19,8 @@
 | Full Compact contract (22 circuits) | `contracts/SelectConnectProtocol.compact` | ❌ Won't compile (see CONTRACT_AUDIT.md) | Reference only |
 | MVP Compact contract (11 circuits) | `contracts/SelectConnectMVP.compact` | ✅ Compiles | **Ship this** |
 | AbuseEscrow contract | `contracts/AbuseEscrow.compact` | ❓ Not audited | Defer to v2 |
-| Next.js pages | `pages/index.js` | ⚠️ Tied to old contract | Partially — UI layout reusable |
-| NoirCardApp component | `frontend/NoirCardApp.tsx` | ⚠️ 29KB, tightly coupled | Partially — card rendering reusable |
+| Next.js pages | `pages/index.js` | ⚠️ Tied to old contract | Partially, UI layout reusable |
+| NoirCardApp component | `frontend/NoirCardApp.tsx` | ⚠️ 29KB, tightly coupled | Partially, card rendering reusable |
 | Midnight API connector | `lib/midnight-api.ts` | ⚠️ Uses old function signatures | Needs update for `.member()`/`.lookup()` calls |
 | Mesh connector | `lib/mesh-connector.ts` | ⚠️ CardanoMeshProvider | Needs update for current Midnight SDK |
 | TypeScript types | `types/midnight.d.ts` | ⚠️ Old contract shape | Regenerate from MVP contract |
@@ -82,14 +82,14 @@ Each MVP circuit needs a corresponding frontend flow:
 
 ### Circuits 3–4: `refundBond` / `slashBond`
 
-**UI**: Admin dashboard — pending bonds list  
+**UI**: Admin dashboard, pending bonds list  
 **Flow**: Admin reviews bond → approves (refund) or reports (slash)
 
 ```
 [Admin Dashboard]               [Contract]              [Result]
 ┌─────────────────┐             ┌──────────────┐        ┌──────────────┐
 │ Bond from xyz   │             │ refundBond()  │───────→│ REFUNDED     │
-│ Amount: $3.00   │──bondId───→│   — or —      │        │   — or —     │
+│ Amount: $3.00   │──bondId───→│  , or,      │        │  , or,     │
 │ [✓ Approve]     │             │ slashBond()   │───────→│ SLASHED      │
 │ [✗ Report]      │             └──────────────┘        │ → safety pool│
 └─────────────────┘                                     └──────────────┘
@@ -97,7 +97,7 @@ Each MVP circuit needs a corresponding frontend flow:
 
 ### Circuit 5: `addRevealLevel`
 
-**UI**: Card settings — reveal level editor  
+**UI**: Card settings, reveal level editor  
 **Flow**: Admin adds levels (Name → LinkedIn → Email → Phone)
 
 ```
@@ -112,7 +112,7 @@ Each MVP circuit needs a corresponding frontend flow:
 
 ### Circuit 6: `accessNextLevel`
 
-**UI**: Recipient view — progressive reveal  
+**UI**: Recipient view, progressive reveal  
 **Flow**: Recipient with active link unlocks next tier
 
 ```
@@ -126,12 +126,12 @@ Each MVP circuit needs a corresponding frontend flow:
 
 ### Circuit 7: `generateAccessLink`
 
-**UI**: Share dialog — generates link/QR for a specific recipient  
+**UI**: Share dialog, generates link/QR for a specific recipient  
 **Flow**: Admin shares card → generates time-limited link
 
 ### Circuit 8: `revokeLink`
 
-**UI**: Admin dashboard — active links list  
+**UI**: Admin dashboard, active links list  
 **Flow**: Admin selects a link → revokes it
 
 ---
@@ -213,31 +213,31 @@ selectConnect/
 ### Sprint 1: Contract Deployment (Week 1–2)
 
 1. **Full compile** MVP contract with ZK circuit generation (`compactc --full`)
-   - Requires Skylake+ CPU (NOT Chuck — use artpro or cloud)
+   - Requires Skylake+ CPU (NOT Chuck, use artpro or cloud)
 2. **Deploy to testnet** via Midnight CLI
 3. **Generate TypeScript types** from compiled contract
-4. **Create `src/lib/contract.ts`** — typed wrapper around deployed contract
+4. **Create `src/lib/contract.ts`**, typed wrapper around deployed contract
 
 ### Sprint 2: Core UI (Week 3–4)
 
-1. **WalletConnect.tsx** — Lace wallet connection
-2. **CardCreator.tsx** — Card creation form → `createCard()` → QR
-3. **CardViewer.tsx** — Scan QR → see card → `postBond()`
-4. **QRShare.tsx** — QR code generation + shareable link
+1. **WalletConnect.tsx**, Lace wallet connection
+2. **CardCreator.tsx**, Card creation form → `createCard()` → QR
+3. **CardViewer.tsx**, Scan QR → see card → `postBond()`
+4. **QRShare.tsx**, QR code generation + shareable link
 
 ### Sprint 3: Bond Management (Week 5–6)
 
-1. **BondManager.tsx** — Admin dashboard showing pending bonds
+1. **BondManager.tsx**, Admin dashboard showing pending bonds
 2. Wire up `refundBond()` and `slashBond()`
 3. **Safety pool display** via `getSafetyPool()`
-4. **Reputation display** — show sender slash history
+4. **Reputation display**, show sender slash history
 
 ### Sprint 4: Progressive Reveal (Week 7–8)
 
-1. **RevealEditor.tsx** — Admin adds reveal levels with off-chain encryption
-2. **RevealViewer.tsx** — Recipient unlocks levels progressively
+1. **RevealEditor.tsx**, Admin adds reveal levels with off-chain encryption
+2. **RevealViewer.tsx**, Recipient unlocks levels progressively
 3. Wire up `addRevealLevel()`, `accessNextLevel()`, `generateAccessLink()`
-4. **LinkManager.tsx** — Admin manages/revokes active links
+4. **LinkManager.tsx**, Admin manages/revokes active links
 
 ### Sprint 5: Polish (Week 9–10)
 
@@ -300,7 +300,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 The hackathon code (`pages/index.js`, `frontend/NoirCardApp.tsx`, `lib/*.ts`) was built against the old 22-circuit contract. For the MVP:
 
-1. **Don't delete** the hackathon code — it's good reference
+1. **Don't delete** the hackathon code, it's good reference
 2. **Build new** in `src/` directory alongside existing code
 3. **Update `next.config.js`** to use `src/` as the source directory
 4. **Gradually migrate** reusable UI components from `frontend/` to `src/components/`

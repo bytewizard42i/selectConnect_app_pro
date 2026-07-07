@@ -12,9 +12,9 @@
 | `abuse_escrow.compact` | The product moat: refundable bonds before contact, slashing to per-card victim safety pools, repeat-offender surcharges. | engine key-commitment identity; keeper epochs |
 
 The relay enforces BOTH: a live contact grant AND (if the card requires it) a
-live bond. Compact contracts don't call each other in v1 — the relay is the glue.
+live bond. Compact contracts don't call each other in v1, the relay is the glue.
 
-## `archive/` — the 2025 hackathon contracts (do NOT use as reference)
+## `archive/`, the 2025 hackathon contracts (do NOT use as reference)
 
 `SelectConnect.compact`, `SelectConnectMVP.compact`, `SelectConnectProtocol.compact`,
 `AbuseEscrow.compact` predate the engine and use syntax that no longer compiles

@@ -64,7 +64,7 @@ SelectConnect leverages Midnight's **Compact v0.16** language to implement **22 
 
 ## Data Protection as a Core Feature
 
-Privacy isn't an afterthought in SelectConnect—it's the foundational architecture. Every design decision prioritizes user privacy:
+Privacy isn't an afterthought in SelectConnect,it's the foundational architecture. Every design decision prioritizes user privacy:
 
 ### Zero-Knowledge by Design
 - **Contact Information**: Never stored in plaintext, only as cryptographic commitments

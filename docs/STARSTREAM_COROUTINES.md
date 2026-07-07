@@ -2,13 +2,13 @@
 
 **Date**: March 24, 2026
 **Authors**: Cassie + John
-**Reference**: Sebastien Guillemot (CTO, Midnight Foundation) — Starstream zkVM
+**Reference**: Sebastien Guillemot (CTO, Midnight Foundation), Starstream zkVM
 
 ---
 
 ## Why Starstream Matters for SelectConnect
 
-SelectConnect's core innovation is **progressive reveal** — anonymous parties gradually disclose identity through staged interactions, protected by abuse bonds and pseudonymous reputation. This is inherently a **multi-step, pausable workflow** — exactly what Starstream coroutines are designed for.
+SelectConnect's core innovation is **progressive reveal**, anonymous parties gradually disclose identity through staged interactions, protected by abuse bonds and pseudonymous reputation. This is inherently a **multi-step, pausable workflow**, exactly what Starstream coroutines are designed for.
 
 ---
 
@@ -62,10 +62,10 @@ Total: 1 folded proof, 1 on-chain verification per connection
 
 Starstream coroutines make abuse bonds smarter:
 
-- **Bond posted at coroutine start** — locked for the duration
-- **If either party aborts mid-coroutine** — the coroutine's folded proof up to that point proves who abandoned, and the bond is forfeit
-- **If both complete** — bonds return automatically at coroutine completion
-- **No separate bond management circuit needed** — it's embedded in the coroutine flow
+- **Bond posted at coroutine start**, locked for the duration
+- **If either party aborts mid-coroutine**, the coroutine's folded proof up to that point proves who abandoned, and the bond is forfeit
+- **If both complete**, bonds return automatically at coroutine completion
+- **No separate bond management circuit needed**, it's embedded in the coroutine flow
 
 ---
 
@@ -75,7 +75,7 @@ SelectConnect's privacy model requires that proofs are generated client-side (th
 
 - **Current**: `start-proof-server.sh` runs a local process
 - **Starstream**: Proof generation happens in the browser tab via WASM
-- **Result**: SelectConnect works on any device with a modern browser — phones, tablets, Chromebooks
+- **Result**: SelectConnect works on any device with a modern browser, phones, tablets, Chromebooks
 
 ---
 
@@ -102,4 +102,4 @@ One nested coroutine chain. One folded proof. Full lifecycle from anonymous disc
 
 ---
 
-*Cross-pollinated with SharedScience, CareToCoin, and health data repos — Cassie + John, March 24, 2026*
+*Cross-pollinated with SharedScience, CareToCoin, and health data repos, Cassie + John, March 24, 2026*

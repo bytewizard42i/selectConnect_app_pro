@@ -1,4 +1,4 @@
-# SelectConnect — Engine Reference
+# SelectConnect, Engine Reference
 
 > Pointer to the shared Compact modules that SelectConnect imports.
 
