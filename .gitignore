@@ -12,5 +12,10 @@ logs/
 contracts/build/
 coverage/
 .nyc_output/
+# Next.js build output
+.next/
+.alice_memory
+*:Zone.Identifier
+
 # Ignore packaged archives
 *.zip
