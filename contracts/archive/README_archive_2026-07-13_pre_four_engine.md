@@ -1,8 +1,7 @@
 # SelectConnect Contracts (v2, on the DIDz engine)
 
-> Aligned July 13, 2026 as a downstream consumer of the DIDzM four-engine
-> architecture. SelectConnect may use DIDz, AgenticDID, RWAz, and HelixCTW
-> capabilities where applicable, but it is not an engine and does not redefine them.
+> Rebuilt July 5, 2026 against the new three-pillar architecture
+> (DIDz root / AgenticDID / RWAz as pillars, SelectConnect as first product).
 > See `docs/DIDz_ENGINE_INTEGRATION.md` for the full decision record.
 
 ## Live contracts (compiled on compactc 0.31.1, full ZK keys)

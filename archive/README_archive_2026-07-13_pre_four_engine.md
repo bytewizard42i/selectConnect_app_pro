@@ -431,10 +431,9 @@ Apache License 2.0 - Open source for maximum impact and community contribution.
 
 **SelectConnect: Redefining digital trust, one connection at a time.** 🃏🔒⚖️
 
-## Four-engine DIDzM connection
+## Three-pillar connection
 
-SelectConnect is a **downstream consumer product** that adopts applicable
-capabilities from DIDzM's four engines:
+SelectConnect is a **consumer product** built on the DIDz three-pillar model:
 
 - **DIDz (root identity):** Each user has a DIDz. SelectConnect issues contact grants tied to that DIDz.
 - **AgenticDID (agent authority):** Contact grants use the scoped-grant engine from midnight-modules, bounded, revocable, attenuating.
