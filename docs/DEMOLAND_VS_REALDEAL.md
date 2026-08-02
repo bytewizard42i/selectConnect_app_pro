@@ -1,5 +1,13 @@
 # SelectConnect, demoLand vs realDeal
 
+> **CONVENTION UPDATED Aug 2, 2026 — now THREE stages:**
+> **DemoLand → TestWired → RealDeal.** TestWired = the same product wired
+> to TEST infrastructure (Midnight localnet/preprod contracts, test-mode
+> APIs) with real transactions and proofs against test tokens; RealDeal is
+> then mostly a configuration change. Canonical definition:
+> `DIDzMonolith-docs/standards/BUILD_STAGES.md` — it supersedes the
+> two-stage framing below (kept for the mode details it documents).
+
 > Convention: every DIDzMonolith product ships two modes.
 > Canonical spec: `~/PixyPi/docs/DEMOLAND_AUTH_STANDARD.md`
 
